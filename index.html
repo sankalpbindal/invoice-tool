@@ -1503,44 +1503,95 @@ function amountToWords(n) {
 
 // ── BUILD INVOICE HTML (self-contained, inline styles for PDF) ───
 function buildInvoiceHTML(forPDF = false) {
-  const bizName = document.getElementById('biz-name').value  || 'Your Business Name';
-  const bizAddr = document.getElementById('biz-addr').value  || '';
-  const bizGST  = document.getElementById('biz-gstin').value || '';
-  const bizState= document.getElementById('biz-state').value || '';
-  const bizPhone= document.getElementById('biz-phone').value || '';
-  const custName= document.getElementById('cust-name').value || 'Customer Name';
-  const custAddr= document.getElementById('cust-addr').value || '';
-  const custGST = document.getElementById('cust-gstin').value|| '';
-  const invNum  = document.getElementById('inv-num').value   || 'INV-001';
-  const invDate = document.getElementById('inv-date').value  || '';
-  const dueDate = document.getElementById('due-date').value  || '';
-  const pos     = document.getElementById('pos').value       || '';
-  const notes   = document.getElementById('inv-notes').value || '';
+  // ── SAMPLE DATA fallback (used when fields are empty) ──
+  const SAMPLE = {
+    bizName:  'Sharma Enterprises',
+    bizAddr:  '12, MG Road, Koramangala\nBengaluru, Karnataka – 560095',
+    bizGST:   '29AABCS1429B1ZB',
+    bizState: 'Karnataka',
+    bizPhone: '+91 98765 43210',
+    custName: 'Gupta Tech Solutions Pvt. Ltd.',
+    custAddr: '45, Connaught Place\nNew Delhi – 110001',
+    custGST:  '07AADCG3541N1ZT',
+    invNum:   'INV-2025-001',
+    invDate:  new Date().toISOString().split('T')[0],
+    dueDate:  (() => { const d = new Date(); d.setDate(d.getDate()+15); return d.toISOString().split('T')[0]; })(),
+    pos:      'Delhi',
+    notes:    'Payment due within 15 days. Thank you for your business!\nBank: HDFC Bank | A/C: 1234567890 | IFSC: HDFC0001234'
+  };
+
+  const SAMPLE_ITEMS = [
+    { desc: 'Website Design & Development', hsn: '998314', rate: 25000, qty: 1, gst: 18 },
+    { desc: 'Monthly SEO Services', hsn: '998361', rate: 8000, qty: 2, gst: 18 },
+    { desc: 'Logo & Brand Identity Design', hsn: '998383', rate: 5000, qty: 1, gst: 12 },
+  ];
+
+  // Helper: return value if non-empty, else sample fallback
+  const val = (id, fallback) => {
+    const el = document.getElementById(id);
+    return (el && el.value && el.value.trim()) ? el.value.trim() : fallback;
+  };
+
+  const bizName = val('biz-name', SAMPLE.bizName);
+  const bizAddr = val('biz-addr', SAMPLE.bizAddr);
+  const bizGST  = val('biz-gstin', SAMPLE.bizGST);
+  const bizState= val('biz-state', SAMPLE.bizState);
+  const bizPhone= val('biz-phone', SAMPLE.bizPhone);
+  const custName= val('cust-name', SAMPLE.custName);
+  const custAddr= val('cust-addr', SAMPLE.custAddr);
+  const custGST = val('cust-gstin', SAMPLE.custGST);
+  const invNum  = val('inv-num',  SAMPLE.invNum);
+  const invDate = val('inv-date', SAMPLE.invDate);
+  const dueDate = val('due-date', SAMPLE.dueDate);
+  const pos     = val('pos',      SAMPLE.pos);
+  const notes   = val('inv-notes', SAMPLE.notes);
   const discount= parseFloat(document.getElementById('discount')?.value) || 0;
 
-  const rows = document.querySelectorAll('#items-container .item-row');
+  // Use real items if any have a description+rate, else use sample items
+  const domRows = document.querySelectorAll('#items-container .item-row');
+  const hasRealItems = Array.from(domRows).some(r => {
+    const d = r.querySelector('.item-desc')?.value?.trim();
+    const p = parseFloat(r.querySelector('.item-rate')?.value);
+    return d && p > 0;
+  });
+
   let subtotal = 0, totalGST = 0, itemsHTML = '';
-  rows.forEach((row, i) => {
-    const desc   = row.querySelector('.item-desc')?.value || '-';
-    const hsn    = row.querySelector('.item-hsn')?.value  || '-';
-    const rate   = parseFloat(row.querySelector('.item-rate')?.value) || 0;
-    const qty    = parseFloat(row.querySelector('.item-qty')?.value)  || 1;
-    const gstPct = parseFloat(row.querySelector('.item-gst')?.value)  || 0;
-    const base   = rate * qty;
-    const gstAmt = base * gstPct / 100;
-    subtotal += base; totalGST += gstAmt;
-    const bg = i % 2 === 1 ? '#fafaf8' : '#ffffff';
-    itemsHTML += `<tr>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${i+1}</td>
+
+  if (hasRealItems) {
+    domRows.forEach((row, i) => {
+      const desc   = row.querySelector('.item-desc')?.value || '-';
+      const hsn    = row.querySelector('.item-hsn')?.value  || '-';
+      const rate   = parseFloat(row.querySelector('.item-rate')?.value) || 0;
+      const qty    = parseFloat(row.querySelector('.item-qty')?.value)  || 1;
+      const gstPct = parseFloat(row.querySelector('.item-gst')?.value)  || 0;
+      const base   = rate * qty;
+      const gstAmt = base * gstPct / 100;
+      subtotal += base; totalGST += gstAmt;
+      const bg = i % 2 === 1 ? '#fafaf8' : '#ffffff';
+      itemsHTML += buildItemRow(i+1, desc, hsn, qty, rate, gstPct, gstAmt, base+gstAmt, bg);
+    });
+  } else {
+    SAMPLE_ITEMS.forEach((item, i) => {
+      const base   = item.rate * item.qty;
+      const gstAmt = base * item.gst / 100;
+      subtotal += base; totalGST += gstAmt;
+      const bg = i % 2 === 1 ? '#fafaf8' : '#ffffff';
+      itemsHTML += buildItemRow(i+1, item.desc, item.hsn, item.qty, item.rate, item.gst, gstAmt, base+gstAmt, bg);
+    });
+  }
+
+  function buildItemRow(num, desc, hsn, qty, rate, gstPct, gstAmt, total, bg) {
+    return `<tr>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${num}</td>
       <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${desc}</td>
       <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:12px;background:${bg};color:#888">${hsn}</td>
       <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:center">${qty}</td>
       <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:right;font-family:monospace">${fmt(rate)}</td>
       <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:center">${gstPct}%</td>
       <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:right;font-family:monospace">${fmt(gstAmt)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;font-weight:600;background:${bg};text-align:right;font-family:monospace">${fmt(base + gstAmt)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;font-weight:600;background:${bg};text-align:right;font-family:monospace">${fmt(total)}</td>
     </tr>`;
-  });
+  }
 
   const cgst  = gstMode === 'intra' ? totalGST/2 : 0;
   const sgst  = gstMode === 'intra' ? totalGST/2 : 0;
