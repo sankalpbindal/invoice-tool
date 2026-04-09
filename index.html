@@ -1126,19 +1126,6 @@ footer a { color: var(--accent); text-decoration: none; }
 <section class="seo-section">
   <div class="section-label">Why InvoiceKaro?</div>
   <div class="section-title">The GST Invoice Tool<br>Built for Indian Businesses</div>
- <!-- 🔥 ADD BELOW THIS -->
-
-  <h2>Free GST Invoice Generator Without Login</h2>
-  <p>Create GST invoices instantly without signup. Perfect for freelancers and small businesses in India.</p>
-
-  <h2>GST Invoice Generator for Freelancers</h2>
-  <p>Easily create invoices for freelance work with GST calculation and professional format.</p>
-
-  <h2>Online Invoice Generator India Free</h2>
-  <p>Generate invoices online with GST support, tax breakdown, and instant preview.</p>
-
-  <!-- EXISTING CARDS CONTINUE -->
-  
   <p style="color:var(--muted);margin-top:0.75rem;max-width:540px;line-height:1.7">Whether you're a freelancer, small shop owner, or growing startup — InvoiceKaro makes GST-compliant billing simple, fast, and professional.</p>
   <div class="seo-grid">
     <div class="seo-card">
@@ -1272,40 +1259,130 @@ footer a { color: var(--accent); text-decoration: none; }
 <div class="toast" id="toast"><span class="t-icon"></span><span id="toast-msg"></span></div>
 
 <script>
-// ─── STATE ───
-let gstMode = 'intra';
-let logoDataURL = null;
-let savedInvoices = JSON.parse(localStorage.getItem('invoiceKaroSaved') || '[]');
-let isPro = false; // Toggle to true to unlock pro features
+// ═══════════════════════════════════════════════════════
+//  InvoiceKaro — Pro Unlock System + Razorpay + PDF Fix
+// ═══════════════════════════════════════════════════════
 
-// ─── INIT ───
+// ── PAID USER LIST ──────────────────────────────────────
+// Add verified paid emails here. After Razorpay payment,
+// add the customer email to this array and redeploy.
+// You can also automate this via a Razorpay webhook.
+const PRO_EMAILS = [
+  // "paid@example.com",
+  // "business@gmail.com",
+];
+
+// ── DEMO LIMITS ─────────────────────────────────────────
+const DEMO_PDF_LIMIT  = 2;  // free PDF downloads before friction
+const DEMO_SAVE_LIMIT = 1;  // free saves before friction
+
+// ── STATE ────────────────────────────────────────────────
+let gstMode      = 'intra';
+let logoDataURL  = null;
+let savedInvoices = JSON.parse(localStorage.getItem('ik_saved') || '[]');
+let demoStats    = JSON.parse(localStorage.getItem('ik_demo')  || '{"pdf":0,"save":0}');
+let currentEmail = localStorage.getItem('ik_email') || null;
+let isPro        = false;
+let trialActive  = false;
+
+// ── INIT ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const today = new Date();
   document.getElementById('inv-date').value = today.toISOString().split('T')[0];
   const due = new Date(today); due.setDate(due.getDate() + 15);
   document.getElementById('due-date').value = due.toISOString().split('T')[0];
-  addItem();
-  addItem();
+  addItem(); addItem();
   recalc();
   renderSavedList();
+  restoreSession();
+  injectDemoBar();
+  injectModals();
 });
 
-// ─── GST VALIDATION ───
+// ── SESSION RESTORE ───────────────────────────────────────
+function restoreSession() {
+  if (!currentEmail) return;
+  checkAccess(currentEmail);
+}
+
+function checkAccess(email) {
+  const e = email.trim().toLowerCase();
+  if (PRO_EMAILS.map(x => x.toLowerCase()).includes(e)) {
+    activatePro(e, 'pro');
+    return true;
+  }
+  // Check trial
+  const trials = JSON.parse(localStorage.getItem('ik_trials') || '{}');
+  if (trials[e]) {
+    const expiry = new Date(trials[e]);
+    if (expiry > new Date()) {
+      activatePro(e, 'trial', trials[e]);
+      return true;
+    } else {
+      toast('⏰', 'Your free trial has expired. Upgrade to Pro!');
+    }
+  }
+  return false;
+}
+
+function activatePro(email, plan, trialExpiry) {
+  currentEmail = email;
+  isPro = true;
+  trialActive = plan === 'trial';
+  localStorage.setItem('ik_email', email);
+  updateProUI(plan, trialExpiry);
+}
+
+function updateProUI(plan, trialExpiry) {
+  document.querySelectorAll('.paid-gate').forEach(el => {
+    el.innerHTML = `<span style="color:var(--mint)">✓ Pro unlocked${plan==='trial'?' (Trial)':''}</span>`;
+  });
+  document.querySelectorAll('.pill-pro').forEach(el => {
+    el.style.background = 'rgba(0,201,167,0.15)';
+    el.style.color = 'var(--mint)';
+    el.style.borderColor = 'rgba(0,201,167,0.4)';
+    el.textContent = plan === 'trial' ? '🎁 Trial' : '✦ Pro';
+  });
+  const bar = document.getElementById('demo-bar');
+  if (bar) bar.style.display = 'none';
+
+  const badge = document.getElementById('user-badge');
+  if (badge) {
+    badge.style.display = 'flex';
+    badge.innerHTML = `
+      <span style="font-size:0.75rem;color:${plan==='trial'?'var(--gold)':'var(--mint)'};font-weight:700">
+        ${plan==='trial'?'🎁 Trial Active':'✦ Pro'}
+      </span>
+      <span style="font-size:0.72rem;color:#888899">${currentEmail}</span>
+      <button onclick="logoutUser()" style="border:none;background:rgba(255,255,255,0.08);color:#888899;border-radius:6px;padding:3px 8px;font-size:0.7rem;cursor:pointer">Sign out</button>
+    `;
+    if (trialExpiry) {
+      const days = Math.ceil((new Date(trialExpiry) - new Date()) / 86400000);
+      badge.innerHTML += `<span style="font-size:0.7rem;color:var(--gold)">${days}d left in trial</span>`;
+    }
+  }
+}
+
+function logoutUser() {
+  isPro = false; trialActive = false; currentEmail = null;
+  localStorage.removeItem('ik_email');
+  location.reload();
+}
+
+// ── GST VALIDATION ────────────────────────────────────────
 function validateGST(inp) {
   const v = inp.value;
   const msg = document.getElementById('gst-valid-msg');
   if (!v) { msg.textContent = ''; return; }
   const re = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
   if (re.test(v)) {
-    msg.style.color = '#00c9a7';
-    msg.textContent = '✓ Valid GSTIN format';
+    msg.style.color = '#00c9a7'; msg.textContent = '✓ Valid GSTIN format';
   } else {
-    msg.style.color = '#ff5a1f';
-    msg.textContent = '✗ Invalid GSTIN format (e.g. 22AAAAA0000A1Z5)';
+    msg.style.color = '#ff5a1f'; msg.textContent = '✗ Invalid GSTIN (e.g. 22AAAAA0000A1Z5)';
   }
 }
 
-// ─── GST MODE ───
+// ── GST MODE ──────────────────────────────────────────────
 function setGSTMode(mode) {
   gstMode = mode;
   document.getElementById('btn-cgst').classList.toggle('active', mode === 'intra');
@@ -1320,78 +1397,62 @@ function setGSTMode(mode) {
 function updateGSTType() {
   const bs = document.getElementById('biz-state').value;
   const cs = document.getElementById('cust-state').value;
-  const pos = document.getElementById('pos').value;
   const note = document.getElementById('gst-auto-note');
   if (bs && cs && bs !== cs) {
-    setGSTMode('inter');
-    note.textContent = '✦ Auto-detected: Inter-state → IGST applied';
+    setGSTMode('inter'); note.textContent = '✦ Auto-detected: Inter-state → IGST applied';
   } else if (bs && cs && bs === cs) {
-    setGSTMode('intra');
-    note.textContent = '✦ Auto-detected: Intra-state → CGST + SGST applied';
-  } else {
-    note.textContent = '';
-  }
+    setGSTMode('intra'); note.textContent = '✦ Auto-detected: Intra-state → CGST + SGST applied';
+  } else { note.textContent = ''; }
 }
 
-// ─── ITEMS ───
+// ── ITEMS ─────────────────────────────────────────────────
 let itemCount = 0;
 function addItem() {
   itemCount++;
   const id = 'item-' + itemCount;
-  const container = document.getElementById('items-container');
   const row = document.createElement('div');
-  row.className = 'item-row';
-  row.id = id;
+  row.className = 'item-row'; row.id = id;
   row.innerHTML = `
     <input type="text" placeholder="Item / Service description" oninput="recalc()" class="item-desc" />
     <input type="text" placeholder="1234" class="item-hsn" oninput="recalc()" />
     <input type="number" placeholder="0.00" min="0" class="item-rate" oninput="recalc()" />
     <select class="item-gst" onchange="recalc()">
-      <option value="0">0%</option>
-      <option value="5">5%</option>
-      <option value="12">12%</option>
-      <option value="18" selected>18%</option>
+      <option value="0">0%</option><option value="5">5%</option>
+      <option value="12">12%</option><option value="18" selected>18%</option>
       <option value="28">28%</option>
     </select>
     <input type="number" placeholder="1" min="1" value="1" class="item-qty" oninput="recalc()" />
     <button class="remove-btn" onclick="removeItem('${id}')">✕</button>
   `;
-  container.appendChild(row);
+  document.getElementById('items-container').appendChild(row);
   recalc();
-  updatePreview();
 }
 
 function removeItem(id) {
   const el = document.getElementById(id);
   if (el) {
-    el.style.opacity = '0';
-    el.style.transform = 'translateX(20px)';
-    el.style.transition = 'all 0.2s';
-    setTimeout(() => { el.remove(); recalc(); updatePreview(); }, 200);
+    el.style.cssText += 'opacity:0;transform:translateX(20px);transition:all 0.2s';
+    setTimeout(() => { el.remove(); recalc(); }, 200);
   }
 }
 
-// ─── RECALCULATE ───
+// ── CALCULATE ─────────────────────────────────────────────
 function recalc() {
   const rows = document.querySelectorAll('#items-container .item-row');
-  let subtotal = 0, totalGST = 0, cgst = 0, sgst = 0, igst = 0;
+  let subtotal = 0, totalGST = 0;
   const gstBreakdown = {};
-
   rows.forEach(row => {
     const rate = parseFloat(row.querySelector('.item-rate')?.value) || 0;
-    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 1;
-    const gstPct = parseFloat(row.querySelector('.item-gst')?.value) || 0;
+    const qty  = parseFloat(row.querySelector('.item-qty')?.value)  || 1;
+    const pct  = parseFloat(row.querySelector('.item-gst')?.value)  || 0;
     const base = rate * qty;
-    const gstAmt = base * gstPct / 100;
-    subtotal += base;
-    totalGST += gstAmt;
-    if (!gstBreakdown[gstPct]) gstBreakdown[gstPct] = 0;
-    gstBreakdown[gstPct] += gstAmt;
+    const gstAmt = base * pct / 100;
+    subtotal += base; totalGST += gstAmt;
+    gstBreakdown[pct] = (gstBreakdown[pct] || 0) + gstAmt;
   });
-
-  if (gstMode === 'intra') { cgst = totalGST / 2; sgst = totalGST / 2; }
-  else { igst = totalGST; }
-
+  const cgst = gstMode === 'intra' ? totalGST / 2 : 0;
+  const sgst = gstMode === 'intra' ? totalGST / 2 : 0;
+  const igst = gstMode === 'inter' ? totalGST : 0;
   const discount = parseFloat(document.getElementById('discount')?.value) || 0;
   const grand = subtotal + totalGST - discount;
 
@@ -1405,7 +1466,6 @@ function recalc() {
   document.getElementById('mini-invnum').textContent = document.getElementById('inv-num').value || 'INV-001';
   document.getElementById('amount-words').textContent = grand > 0 ? 'Rupees ' + amountToWords(Math.round(grand)) + ' Only' : '';
 
-  // GST chips
   const chips = document.getElementById('gst-breakdown-chips');
   chips.innerHTML = '';
   Object.entries(gstBreakdown).forEach(([pct, amt]) => {
@@ -1416,15 +1476,13 @@ function recalc() {
       chips.appendChild(c);
     }
   });
-
-  updatePreview();
 }
 
 function fmt(n) {
   return '₹' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// ─── AMOUNT TO WORDS ───
+// ── AMOUNT TO WORDS ───────────────────────────────────────
 function amountToWords(n) {
   if (n === 0) return 'Zero';
   const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
@@ -1432,223 +1490,263 @@ function amountToWords(n) {
   const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
   function h(n) {
     if (n < 20) return ones[n];
-    if (n < 100) return tens[Math.floor(n/10)] + (n%10?' '+ones[n%10]:'');
-    return ones[Math.floor(n/100)] + ' Hundred' + (n%100?' '+h(n%100):'');
+    if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' '+ones[n%10] : '');
+    return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' '+h(n%100) : '');
   }
   let w = '';
   if (n >= 10000000) { w += h(Math.floor(n/10000000)) + ' Crore '; n %= 10000000; }
-  if (n >= 100000) { w += h(Math.floor(n/100000)) + ' Lakh '; n %= 100000; }
-  if (n >= 1000) { w += h(Math.floor(n/1000)) + ' Thousand '; n %= 1000; }
+  if (n >= 100000)   { w += h(Math.floor(n/100000)) + ' Lakh '; n %= 100000; }
+  if (n >= 1000)     { w += h(Math.floor(n/1000)) + ' Thousand '; n %= 1000; }
   if (n > 0) w += h(n);
   return w.trim();
 }
 
-// ─── PREVIEW ───
-function updatePreview() {
-  document.getElementById('mini-invnum').textContent = document.getElementById('inv-num').value || 'INV-001';
-}
-
-function buildInvoiceHTML() {
-  const bizName = document.getElementById('biz-name').value || 'Your Business Name';
-  const bizAddr = document.getElementById('biz-addr').value || '';
-  const bizGST = document.getElementById('biz-gstin').value || '';
-  const bizState = document.getElementById('biz-state').value || '';
-  const bizPhone = document.getElementById('biz-phone').value || '';
-  const custName = document.getElementById('cust-name').value || 'Customer Name';
-  const custAddr = document.getElementById('cust-addr').value || '';
-  const custGST = document.getElementById('cust-gstin').value || '';
-  const invNum = document.getElementById('inv-num').value || 'INV-001';
-  const invDate = document.getElementById('inv-date').value || '';
-  const dueDate = document.getElementById('due-date').value || '';
-  const pos = document.getElementById('pos').value || '';
-  const notes = document.getElementById('inv-notes').value || '';
-  const discount = parseFloat(document.getElementById('discount')?.value) || 0;
+// ── BUILD INVOICE HTML (self-contained, inline styles for PDF) ───
+function buildInvoiceHTML(forPDF = false) {
+  const bizName = document.getElementById('biz-name').value  || 'Your Business Name';
+  const bizAddr = document.getElementById('biz-addr').value  || '';
+  const bizGST  = document.getElementById('biz-gstin').value || '';
+  const bizState= document.getElementById('biz-state').value || '';
+  const bizPhone= document.getElementById('biz-phone').value || '';
+  const custName= document.getElementById('cust-name').value || 'Customer Name';
+  const custAddr= document.getElementById('cust-addr').value || '';
+  const custGST = document.getElementById('cust-gstin').value|| '';
+  const invNum  = document.getElementById('inv-num').value   || 'INV-001';
+  const invDate = document.getElementById('inv-date').value  || '';
+  const dueDate = document.getElementById('due-date').value  || '';
+  const pos     = document.getElementById('pos').value       || '';
+  const notes   = document.getElementById('inv-notes').value || '';
+  const discount= parseFloat(document.getElementById('discount')?.value) || 0;
 
   const rows = document.querySelectorAll('#items-container .item-row');
-  let subtotal = 0, totalGST = 0;
-  let itemsHTML = '';
+  let subtotal = 0, totalGST = 0, itemsHTML = '';
   rows.forEach((row, i) => {
-    const desc = row.querySelector('.item-desc')?.value || '-';
-    const hsn = row.querySelector('.item-hsn')?.value || '-';
-    const rate = parseFloat(row.querySelector('.item-rate')?.value) || 0;
-    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 1;
-    const gstPct = parseFloat(row.querySelector('.item-gst')?.value) || 0;
-    const base = rate * qty;
+    const desc   = row.querySelector('.item-desc')?.value || '-';
+    const hsn    = row.querySelector('.item-hsn')?.value  || '-';
+    const rate   = parseFloat(row.querySelector('.item-rate')?.value) || 0;
+    const qty    = parseFloat(row.querySelector('.item-qty')?.value)  || 1;
+    const gstPct = parseFloat(row.querySelector('.item-gst')?.value)  || 0;
+    const base   = rate * qty;
     const gstAmt = base * gstPct / 100;
-    const total = base + gstAmt;
     subtotal += base; totalGST += gstAmt;
+    const bg = i % 2 === 1 ? '#fafaf8' : '#ffffff';
     itemsHTML += `<tr>
-      <td>${i+1}</td>
-      <td>${desc}</td>
-      <td>${hsn}</td>
-      <td>${qty}</td>
-      <td>${fmt(rate)}</td>
-      <td>${gstPct}%</td>
-      <td>${fmt(gstAmt)}</td>
-      <td>${fmt(total)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${i+1}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${desc}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:12px;background:${bg};color:#888">${hsn}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:center">${qty}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:right;font-family:monospace">${fmt(rate)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:center">${gstPct}%</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:right;font-family:monospace">${fmt(gstAmt)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;font-weight:600;background:${bg};text-align:right;font-family:monospace">${fmt(base + gstAmt)}</td>
     </tr>`;
   });
 
-  const cgst = gstMode === 'intra' ? totalGST/2 : 0;
-  const sgst = gstMode === 'intra' ? totalGST/2 : 0;
-  const igst = gstMode === 'inter' ? totalGST : 0;
+  const cgst  = gstMode === 'intra' ? totalGST/2 : 0;
+  const sgst  = gstMode === 'intra' ? totalGST/2 : 0;
+  const igst  = gstMode === 'inter' ? totalGST   : 0;
   const grand = subtotal + totalGST - discount;
 
-  const logoHTML = logoDataURL && isPro
-    ? `<img src="${logoDataURL}" class="inv-logo-img" alt="Logo" />`
-    : `<div style="width:60px;height:60px;background:var(--ink);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:1.5rem;color:white">${bizName.charAt(0).toUpperCase()}</div>`;
+  const logoHTML = (logoDataURL && isPro)
+    ? `<img src="${logoDataURL}" style="max-width:100px;max-height:55px;object-fit:contain;display:block" />`
+    : `<div style="width:52px;height:52px;background:#0d0d14;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:white;font-family:sans-serif">${bizName.charAt(0).toUpperCase()}</div>`;
 
-  const taxRows = gstMode === 'intra' ? `
-    <div class="inv-total-row"><span class="lbl">CGST (50%)</span><span class="val">${fmt(cgst)}</span></div>
-    <div class="inv-total-row"><span class="lbl">SGST (50%)</span><span class="val">${fmt(sgst)}</span></div>
-  ` : `<div class="inv-total-row"><span class="lbl">IGST</span><span class="val">${fmt(igst)}</span></div>`;
+  const taxRowsHTML = gstMode === 'intra'
+    ? `<tr><td style="padding:6px 0;color:#888;font-size:12px">CGST (50%)</td><td style="text-align:right;font-family:monospace;font-size:12px">${fmt(cgst)}</td></tr>
+       <tr><td style="padding:6px 0;color:#888;font-size:12px">SGST (50%)</td><td style="text-align:right;font-family:monospace;font-size:12px">${fmt(sgst)}</td></tr>`
+    : `<tr><td style="padding:6px 0;color:#888;font-size:12px">IGST</td><td style="text-align:right;font-family:monospace;font-size:12px">${fmt(igst)}</td></tr>`;
 
-  return `<div id="invoice-preview">
-    <div class="inv-header">
-      <div class="inv-logo-area">
+  const watermarkHTML = (!isPro && forPDF)
+    ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:72px;font-weight:900;color:rgba(255,90,31,0.06);white-space:nowrap;pointer-events:none;letter-spacing:8px;font-family:sans-serif;z-index:1">InvoiceKaro.in</div>`
+    : '';
+
+  return `<div style="font-family:'DM Sans',Arial,sans-serif;background:#fff;padding:36px;max-width:800px;margin:0 auto;position:relative;color:#2a2a3e">
+  ${watermarkHTML}
+  <!-- HEADER -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+    <tr>
+      <td style="vertical-align:top;width:60%">
         ${logoHTML}
-        <h2 style="margin-top:0.75rem">${bizName}</h2>
-        <p>${bizAddr.replace(/\n/g,'<br>')}</p>
-        ${bizPhone ? `<p>📞 ${bizPhone}</p>` : ''}
-        ${bizGST ? `<div class="inv-gst-badge">GSTIN: ${bizGST}</div>` : ''}
-        ${bizState ? `<p style="font-size:0.78rem;color:var(--muted);margin-top:4px">State: ${bizState}</p>` : ''}
-      </div>
-      <div class="inv-meta">
-        <h3>TAX INVOICE</h3>
-        <p>Invoice No: <strong>${invNum}</strong></p>
-        <p>Date: <strong>${invDate}</strong></p>
-        ${dueDate ? `<p>Due: <strong>${dueDate}</strong></p>` : ''}
-        ${pos ? `<p>Place of Supply: <strong>${pos}</strong></p>` : ''}
-        <p style="margin-top:8px;font-size:0.7rem;font-weight:700;padding:4px 10px;background:${gstMode==='intra'?'rgba(0,201,167,0.1)':'rgba(255,90,31,0.1)'};border-radius:20px;color:${gstMode==='intra'?'var(--mint)':'var(--accent)'}">${gstMode==='intra'?'CGST + SGST':'IGST'}</p>
-      </div>
+        <div style="font-size:20px;font-weight:800;margin-top:10px;color:#0d0d14">${bizName}</div>
+        ${bizAddr ? `<div style="font-size:12px;color:#666;margin-top:4px;line-height:1.6">${bizAddr.replace(/\n/g,'<br>')}</div>` : ''}
+        ${bizPhone ? `<div style="font-size:12px;color:#666;margin-top:2px">📞 ${bizPhone}</div>` : ''}
+        ${bizGST ? `<div style="display:inline-block;margin-top:6px;background:#f5f4ef;border:1px solid #ddd;border-radius:5px;padding:3px 10px;font-size:11px;font-family:monospace;color:#0d0d14">GSTIN: ${bizGST}</div>` : ''}
+        ${bizState ? `<div style="font-size:11px;color:#999;margin-top:4px">State: ${bizState}</div>` : ''}
+      </td>
+      <td style="vertical-align:top;text-align:right">
+        <div style="font-size:28px;font-weight:900;color:#ff5a1f;letter-spacing:2px">TAX INVOICE</div>
+        <table style="margin-left:auto;margin-top:8px;font-size:12px;border-collapse:collapse">
+          <tr><td style="color:#888;padding:3px 8px 3px 0">Invoice No:</td><td style="font-weight:700;font-family:monospace">${invNum}</td></tr>
+          <tr><td style="color:#888;padding:3px 8px 3px 0">Date:</td><td style="font-weight:600">${invDate}</td></tr>
+          ${dueDate ? `<tr><td style="color:#888;padding:3px 8px 3px 0">Due:</td><td style="font-weight:600;color:#ff5a1f">${dueDate}</td></tr>` : ''}
+          ${pos ? `<tr><td style="color:#888;padding:3px 8px 3px 0">Place of Supply:</td><td style="font-weight:600">${pos}</td></tr>` : ''}
+        </table>
+        <div style="display:inline-block;margin-top:8px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;background:${gstMode==='intra'?'rgba(0,201,167,0.1)':'rgba(255,90,31,0.1)'};color:${gstMode==='intra'?'#00c9a7':'#ff5a1f'}">${gstMode==='intra'?'CGST + SGST (Intra-state)':'IGST (Inter-state)'}</div>
+      </td>
+    </tr>
+  </table>
+  <!-- GRADIENT BAR -->
+  <div style="height:3px;background:linear-gradient(90deg,#ff5a1f,#e8b84b,#00c9a7);border-radius:2px;margin-bottom:20px"></div>
+  <!-- PARTIES -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+    <tr>
+      <td style="width:50%;vertical-align:top;padding-right:20px">
+        <div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Bill From</div>
+        <div style="font-size:14px;font-weight:700;color:#0d0d14">${bizName}</div>
+        ${bizAddr ? `<div style="font-size:12px;color:#666;margin-top:3px;line-height:1.6">${bizAddr.replace(/\n/g,'<br>')}</div>` : ''}
+        ${bizGST ? `<div style="display:inline-block;margin-top:5px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace">GSTIN: ${bizGST}</div>` : ''}
+      </td>
+      <td style="width:50%;vertical-align:top;padding-left:20px;border-left:2px solid #f0f0ea">
+        <div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Bill To</div>
+        <div style="font-size:14px;font-weight:700;color:#0d0d14">${custName}</div>
+        ${custAddr ? `<div style="font-size:12px;color:#666;margin-top:3px;line-height:1.6">${custAddr.replace(/\n/g,'<br>')}</div>` : ''}
+        ${custGST ? `<div style="display:inline-block;margin-top:5px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace">GSTIN: ${custGST}</div>` : ''}
+      </td>
+    </tr>
+  </table>
+  <!-- ITEMS TABLE -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+    <thead>
+      <tr style="background:#0d0d14">
+        <th style="padding:10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">#</th>
+        <th style="padding:10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Description</th>
+        <th style="padding:10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">HSN/SAC</th>
+        <th style="padding:10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Qty</th>
+        <th style="padding:10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Rate</th>
+        <th style="padding:10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">GST%</th>
+        <th style="padding:10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Tax Amt</th>
+        <th style="padding:10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</th>
+      </tr>
+    </thead>
+    <tbody>${itemsHTML}</tbody>
+  </table>
+  <!-- TOTALS -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+    <tr>
+      <td style="width:55%;vertical-align:top">
+        ${notes ? `<div style="background:#f9f8f3;border-radius:8px;padding:12px;font-size:12px;color:#888"><strong style="color:#333">Notes / Terms:</strong><br>${notes}</div>` : ''}
+      </td>
+      <td style="width:45%;vertical-align:top">
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="padding:6px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">Subtotal</td><td style="text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #eee">${fmt(subtotal)}</td></tr>
+          ${taxRowsHTML}
+          ${discount > 0 ? `<tr><td style="padding:6px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">Discount</td><td style="text-align:right;font-family:monospace;font-size:12px;color:#ff5a1f;border-bottom:1px solid #eee">- ${fmt(discount)}</td></tr>` : ''}
+          <tr>
+            <td style="padding:12px 0 8px;font-weight:800;font-size:15px;color:#0d0d14;border-top:2px solid #0d0d14">Total Amount</td>
+            <td style="text-align:right;font-family:monospace;font-size:18px;font-weight:700;color:#ff5a1f;padding-top:12px;border-top:2px solid #0d0d14">${fmt(grand)}</td>
+          </tr>
+          <tr><td colspan="2" style="text-align:right;font-size:11px;color:#999;font-style:italic;padding-top:4px">${grand > 0 ? 'Rupees ' + amountToWords(Math.round(grand)) + ' Only' : ''}</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+  <!-- FOOTER -->
+  <div style="border-top:1px solid #eee;padding-top:14px;display:flex;justify-content:space-between;align-items:flex-end">
+    <div>
+      <div style="font-size:10px;color:#bbb">Generated by InvoiceKaro.in</div>
+      <div style="font-size:10px;color:#bbb">This is a computer-generated invoice.</div>
     </div>
-    <div class="inv-divider"></div>
-    <div class="inv-parties">
-      <div class="inv-party">
-        <h4>Bill From</h4>
-        <strong>${bizName}</strong>
-        <p>${bizAddr.replace(/\n/g,'<br>')}</p>
-        ${bizGST ? `<div class="inv-gst-badge">GSTIN: ${bizGST}</div>` : ''}
-      </div>
-      <div class="inv-party">
-        <h4>Bill To</h4>
-        <strong>${custName}</strong>
-        <p>${custAddr.replace(/\n/g,'<br>')}</p>
-        ${custGST ? `<div class="inv-gst-badge">GSTIN: ${custGST}</div>` : ''}
-      </div>
+    <div style="text-align:right">
+      <div style="width:140px;border-top:1.5px solid #333;margin-bottom:4px;margin-left:auto"></div>
+      <div style="font-size:11px;color:#999">Authorised Signatory</div>
+      <div style="font-size:13px;font-weight:700;color:#0d0d14">${bizName}</div>
     </div>
-    <table class="inv-table">
-      <thead>
-        <tr>
-          <th>#</th><th>Description</th><th>HSN/SAC</th>
-          <th>Qty</th><th>Rate</th><th>GST</th><th>Tax Amt</th><th>Total</th>
-        </tr>
-      </thead>
-      <tbody>${itemsHTML}</tbody>
-    </table>
-    <div class="inv-totals">
-      <div class="inv-totals-box">
-        <div class="inv-total-row"><span class="lbl">Subtotal</span><span class="val">${fmt(subtotal)}</span></div>
-        ${taxRows}
-        ${discount > 0 ? `<div class="inv-total-row"><span class="lbl">Discount</span><span class="val">- ${fmt(discount)}</span></div>` : ''}
-        <div class="inv-grand">
-          <span class="lbl">Total Amount</span>
-          <span class="val">${fmt(grand)}</span>
-        </div>
-        <div style="font-size:0.75rem;color:var(--muted);text-align:right;margin-top:6px;font-style:italic">
-          ${grand > 0 ? 'Rupees ' + amountToWords(Math.round(grand)) + ' Only' : ''}
-        </div>
-      </div>
-    </div>
-    ${notes ? `<div class="inv-notes"><strong>Notes / Terms:</strong><br>${notes}</div>` : ''}
-    <div class="inv-footer">
-      <div>
-        <div style="font-size:0.72rem;color:var(--muted)">Generated by InvoiceKaro.in</div>
-        <div style="font-size:0.72rem;color:var(--muted)">This is a computer-generated invoice.</div>
-      </div>
-      <div class="inv-sign">
-        <div class="inv-sign-line"></div>
-        <div style="font-size:0.78rem;color:var(--muted)">Authorised Signatory</div>
-        <div style="font-weight:600;font-size:0.85rem">${bizName}</div>
-      </div>
-    </div>
-  </div>`;
+  </div>
+</div>`;
 }
 
+// ── PREVIEW ──────────────────────────────────────────────
 function openPreview() {
   const modal = document.getElementById('preview-modal');
-  modal.querySelector('#invoice-preview')?.remove();
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = buildInvoiceHTML();
-  modal.querySelector('.modal-box').appendChild(wrapper.firstChild);
+  const box = modal.querySelector('.modal-box');
+  const old = document.getElementById('invoice-preview');
+  if (old) old.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'invoice-preview';
+  wrap.style.cssText = 'padding:16px';
+  wrap.innerHTML = buildInvoiceHTML(false);
+  box.appendChild(wrap);
   modal.classList.add('open');
 }
 function closePreview() {
   document.getElementById('preview-modal').classList.remove('open');
 }
-document.getElementById('preview-modal').addEventListener('click', function(e) {
-  if (e.target === this) closePreview();
+document.addEventListener('click', e => {
+  if (e.target.id === 'preview-modal') closePreview();
+  if (e.target.id === 'saved-modal')   closeSavedModal();
+  if (e.target.id === 'pro-modal')     closeProModal();
 });
 
-// ─── PDF DOWNLOAD ───
+// ── PDF DOWNLOAD ─────────────────────────────────────────
 function downloadPDF() {
-  const invNum = document.getElementById('inv-num').value || 'invoice';
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = buildInvoiceHTML();
-  const el = wrapper.firstChild;
-
-  // Add watermark for free users
   if (!isPro) {
-    const wm = document.createElement('div');
-    wm.style.cssText = `
-      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);
-      font-family:'Syne',sans-serif;font-size:5rem;font-weight:800;
-      color:rgba(255,90,31,0.07);white-space:nowrap;pointer-events:none;z-index:9999;
-      letter-spacing:0.1em;text-transform:uppercase;
-    `;
-    wm.textContent = 'InvoiceKaro.in';
-    el.style.position = 'relative';
-    el.appendChild(wm);
+    if (demoStats.pdf >= DEMO_PDF_LIMIT) {
+      openProModal('pdf');
+      return;
+    }
+    demoStats.pdf++;
+    localStorage.setItem('ik_demo', JSON.stringify(demoStats));
+    updateDemoBar();
   }
 
-  document.body.appendChild(el);
-  el.style.maxWidth = '800px';
+  const invNum = document.getElementById('inv-num').value || 'invoice';
+
+  // Build a completely standalone container
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:white';
+  container.innerHTML = buildInvoiceHTML(true);
+  document.body.appendChild(container);
+
   const opt = {
-    margin: 0,
-    filename: `${invNum}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2 },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    margin:      [10, 10, 10, 10],
+    filename:    `${invNum}.pdf`,
+    image:       { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+    jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
-  html2pdf().set(opt).from(el).save().then(() => {
-    el.remove();
+
+  html2pdf().set(opt).from(container).save().then(() => {
+    document.body.removeChild(container);
     if (!isPro) {
-      toast('📄', 'PDF downloaded with watermark. Upgrade Pro to remove!');
+      const left = DEMO_PDF_LIMIT - demoStats.pdf;
+      toast('📄', left > 0 ? `PDF saved with watermark. ${left} free download${left>1?'s':''} left.` : 'Last free PDF used. Upgrade for unlimited!');
     } else {
-      toast('✓', 'Invoice downloaded as PDF!');
+      toast('✓', 'Invoice downloaded!');
     }
+  }).catch(err => {
+    document.body.removeChild(container);
+    console.error(err);
+    toast('❌', 'PDF generation failed. Try again.');
   });
 }
 
-// ─── SAVE ───
+// ── SAVE INVOICE ─────────────────────────────────────────
 function saveInvoice() {
-  if (!isPro) { showUpgrade(); return; }
+  if (!isPro) {
+    if (demoStats.save >= DEMO_SAVE_LIMIT) {
+      openProModal('save');
+      return;
+    }
+    demoStats.save++;
+    localStorage.setItem('ik_demo', JSON.stringify(demoStats));
+    updateDemoBar();
+  }
   const inv = {
-    id: Date.now(),
-    num: document.getElementById('inv-num').value || 'INV-001',
-    customer: document.getElementById('cust-name').value || 'Customer',
-    date: document.getElementById('inv-date').value,
-    total: document.getElementById('t-grand').textContent,
-    html: buildInvoiceHTML()
+    id:       Date.now(),
+    num:      document.getElementById('inv-num').value    || 'INV-001',
+    customer: document.getElementById('cust-name').value  || 'Customer',
+    date:     document.getElementById('inv-date').value,
+    total:    document.getElementById('t-grand').textContent
   };
   savedInvoices.unshift(inv);
-  localStorage.setItem('invoiceKaroSaved', JSON.stringify(savedInvoices));
+  localStorage.setItem('ik_saved', JSON.stringify(savedInvoices));
   renderSavedList();
-  toast('💾', 'Invoice saved successfully!');
+  toast('💾', isPro ? 'Invoice saved!' : `Saved (${DEMO_SAVE_LIMIT - demoStats.save} free save${DEMO_SAVE_LIMIT-demoStats.save===1?'':'s'} left)`);
 }
 
 function renderSavedList() {
   const list = document.getElementById('saved-list');
+  if (!list) return;
   if (!savedInvoices.length) {
     list.innerHTML = `<div style="text-align:center;padding:1rem;color:var(--muted);font-size:0.85rem">No saved invoices yet.</div>`;
     return;
@@ -1660,17 +1758,14 @@ function renderSavedList() {
         <div class="saved-item-date">${inv.date}</div>
       </div>
       <div class="saved-item-amt">${inv.total}</div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 function openSavedModal() {
-  const modal = document.getElementById('saved-modal');
-  const list = document.getElementById('saved-modal-list');
-  if (!savedInvoices.length) {
-    list.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--muted)">No saved invoices.</div>`;
-  } else {
-    list.innerHTML = savedInvoices.map(inv => `
+  const modal  = document.getElementById('saved-modal');
+  const list   = document.getElementById('saved-modal-list');
+  list.innerHTML = savedInvoices.length
+    ? savedInvoices.map(inv => `
       <div class="saved-item">
         <div>
           <div class="saved-item-name">${inv.num} – ${inv.customer}</div>
@@ -1680,9 +1775,8 @@ function openSavedModal() {
           <div class="saved-item-amt">${inv.total}</div>
           <button onclick="deleteSaved(${inv.id})" style="border:none;background:#fff0ee;color:var(--accent);border-radius:6px;padding:4px 8px;font-size:0.75rem;cursor:pointer">🗑</button>
         </div>
-      </div>
-    `).join('');
-  }
+      </div>`).join('')
+    : `<div style="text-align:center;padding:2rem;color:var(--muted)">No saved invoices.</div>`;
   modal.classList.add('open');
 }
 function closeSavedModal() {
@@ -1690,19 +1784,16 @@ function closeSavedModal() {
 }
 function deleteSaved(id) {
   savedInvoices = savedInvoices.filter(i => i.id !== id);
-  localStorage.setItem('invoiceKaroSaved', JSON.stringify(savedInvoices));
+  localStorage.setItem('ik_saved', JSON.stringify(savedInvoices));
   renderSavedList(); openSavedModal();
 }
-document.getElementById('saved-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeSavedModal();
-});
 
-// ─── LOGO ───
+// ── LOGO ──────────────────────────────────────────────────
 function handleLogo(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  if (!isPro) { openProModal('logo'); return; }
+  const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => {
+  reader.onload = ev => {
     logoDataURL = ev.target.result;
     const img = document.getElementById('logo-preview-img');
     img.src = logoDataURL; img.style.display = 'block';
@@ -1710,48 +1801,328 @@ function handleLogo(e) {
   reader.readAsDataURL(file);
 }
 
-// ─── RESET ───
+// ── RESET ─────────────────────────────────────────────────
 function resetForm() {
-  if (!confirm('Reset all invoice data? This cannot be undone.')) return;
-  document.getElementById('biz-name').value = '';
-  document.getElementById('biz-addr').value = '';
-  document.getElementById('biz-gstin').value = '';
-  document.getElementById('biz-phone').value = '';
-  document.getElementById('biz-bank').value = '';
-  document.getElementById('cust-name').value = '';
-  document.getElementById('cust-addr').value = '';
-  document.getElementById('cust-gstin').value = '';
+  if (!confirm('Reset all invoice data?')) return;
+  ['biz-name','biz-addr','biz-gstin','biz-phone','biz-bank',
+   'cust-name','cust-addr','cust-gstin','inv-notes'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
   document.getElementById('inv-num').value = 'INV-001';
-  document.getElementById('inv-notes').value = '';
   document.getElementById('discount').value = '0';
   document.getElementById('items-container').innerHTML = '';
-  itemCount = 0;
-  addItem(); addItem();
-  recalc();
+  itemCount = 0; addItem(); addItem(); recalc();
   toast('🔄', 'Invoice reset!');
 }
 
-// ─── UPGRADE ───
-function showUpgrade() {
-  // Demo: Toggle pro mode for demonstration
-  const msg = `🌟 InvoiceKaro Pro\n\nUnlock:\n✓ PDF Download\n✓ Save Invoices\n✓ Business Logo\n✓ Unlimited Invoices\n✓ GST Reports\n\nPrice: ₹299/month\n\nClick OK to simulate Pro upgrade (demo mode)`;
-  if (confirm(msg)) {
-    isPro = true;
-    toast('✦', 'Pro mode activated! (Demo)');
-    document.querySelectorAll('.paid-gate').forEach(el => {
-      el.innerHTML = '<span style="color:var(--mint)">✓ Pro feature unlocked!</span>';
-    });
+// ── DEMO BAR ──────────────────────────────────────────────
+function injectDemoBar() {
+  if (isPro) return;
+  const bar = document.createElement('div');
+  bar.id = 'demo-bar';
+  bar.style.cssText = `background:linear-gradient(90deg,#1a1a2e,#0d0d14);color:white;padding:10px 20px;text-align:center;font-size:0.82rem;display:flex;align-items:center;justify-content:center;gap:1rem;flex-wrap:wrap`;
+  document.body.insertBefore(bar, document.body.firstChild);
+  updateDemoBar();
+}
+
+function updateDemoBar() {
+  const bar = document.getElementById('demo-bar');
+  if (!bar || isPro) return;
+  const pLeft = DEMO_PDF_LIMIT - demoStats.pdf;
+  const sLeft = DEMO_SAVE_LIMIT - demoStats.save;
+  bar.innerHTML = `
+    <span style="color:#e8b84b;font-weight:700">⚡ Demo Mode</span>
+    <span style="color:#aaa">You're using InvoiceKaro Free —</span>
+    <span style="color:#ff8c42">${pLeft} PDF download${pLeft!==1?'s':''} left</span>
+    <span style="color:#555">·</span>
+    <span style="color:#ff8c42">${sLeft} save${sLeft!==1?'s':''} left</span>
+    <button onclick="openProModal('bar')" style="background:var(--accent,#ff5a1f);color:white;border:none;border-radius:20px;padding:5px 16px;font-size:0.78rem;font-weight:700;cursor:pointer;margin-left:8px">Upgrade Pro →</button>
+  `;
+}
+
+// ── PRO MODAL (Email unlock + Razorpay) ───────────────────
+function injectModals() {
+  const m = document.createElement('div');
+  m.id = 'pro-modal';
+  m.style.cssText = 'position:fixed;inset:0;z-index:900;background:rgba(13,13,20,0.9);display:none;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(6px)';
+  m.innerHTML = `
+  <div style="background:#fff;border-radius:20px;max-width:440px;width:100%;box-shadow:0 32px 128px rgba(0,0,0,0.5);overflow:hidden;animation:modalIn 0.3s cubic-bezier(0.34,1.56,0.64,1)">
+    <!-- Top gradient bar -->
+    <div style="height:4px;background:linear-gradient(90deg,#ff5a1f,#e8b84b,#00c9a7)"></div>
+    <div style="padding:28px">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+        <div>
+          <div style="font-size:0.7rem;font-weight:800;color:#e8b84b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">✦ InvoiceKaro Pro</div>
+          <div id="pro-modal-title" style="font-family:'Syne',sans-serif;font-weight:800;font-size:1.4rem;color:#0d0d14;line-height:1.2">Unlock Pro Features</div>
+        </div>
+        <button onclick="closeProModal()" style="border:none;background:#f5f4ef;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:1rem">✕</button>
+      </div>
+
+      <!-- Already have access tab -->
+      <div style="display:flex;gap:8px;margin-bottom:20px">
+        <button id="tab-unlock" onclick="switchTab('unlock')" style="flex:1;padding:8px;border-radius:8px;border:1.5px solid #ff5a1f;background:rgba(255,90,31,0.06);color:#ff5a1f;font-weight:700;font-size:0.8rem;cursor:pointer">Already Paid? Unlock</button>
+        <button id="tab-pay" onclick="switchTab('pay')" style="flex:1;padding:8px;border-radius:8px;border:1.5px solid #ddd;background:transparent;color:#888;font-weight:600;font-size:0.8rem;cursor:pointer">Buy Pro — ₹299/mo</button>
+      </div>
+
+      <!-- UNLOCK TAB -->
+      <div id="pane-unlock">
+        <p style="font-size:0.85rem;color:#888;margin-bottom:14px;line-height:1.6">Enter the email you used to pay. If your email is verified, Pro unlocks instantly.</p>
+        <div style="margin-bottom:12px">
+          <label style="font-size:0.75rem;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.04em;display:block;margin-bottom:6px">Your Email</label>
+          <input id="unlock-email" type="email" placeholder="you@email.com" style="width:100%;padding:12px 14px;border:1.5px solid #ddd;border-radius:10px;font-size:0.9rem;outline:none;box-sizing:border-box" onfocus="this.style.borderColor='#ff5a1f'" onblur="this.style.borderColor='#ddd'" />
+        </div>
+        <div id="unlock-msg" style="font-size:0.8rem;margin-bottom:12px;min-height:20px"></div>
+        <button onclick="tryUnlock()" style="width:100%;padding:13px;background:#0d0d14;color:white;border:none;border-radius:12px;font-weight:700;font-size:0.95rem;cursor:pointer;transition:background 0.2s" onmouseover="this.style.background='#1a1a2e'" onmouseout="this.style.background='#0d0d14'">
+          🔓 Verify &amp; Unlock Pro
+        </button>
+        <div style="text-align:center;margin-top:12px">
+          <button onclick="startTrial()" style="border:none;background:transparent;color:#e8b84b;font-size:0.82rem;font-weight:600;cursor:pointer;text-decoration:underline">🎁 Start 3-day free trial instead →</button>
+        </div>
+      </div>
+
+      <!-- PAY TAB -->
+      <div id="pane-pay" style="display:none">
+        <div style="background:#f9f8f3;border-radius:12px;padding:16px;margin-bottom:16px">
+          <div style="font-size:1.8rem;font-weight:700;font-family:monospace;color:#ff5a1f;margin-bottom:4px">₹299 <span style="font-size:0.9rem;color:#999">/month</span></div>
+          <div style="font-size:0.78rem;color:#888">Cancel anytime. Instant access after payment.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:0.82rem;color:#555">
+          <div>✓ Unlimited PDF downloads</div><div>✓ No watermark</div>
+          <div>✓ Save unlimited invoices</div><div>✓ Add business logo</div>
+          <div>✓ All GST formats</div><div>✓ Priority support</div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:0.75rem;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.04em;display:block;margin-bottom:6px">Email for Account</label>
+          <input id="pay-email" type="email" placeholder="you@email.com" style="width:100%;padding:12px 14px;border:1.5px solid #ddd;border-radius:10px;font-size:0.9rem;outline:none;box-sizing:border-box" onfocus="this.style.borderColor='#ff5a1f'" onblur="this.style.borderColor='#ddd'" />
+        </div>
+        <button onclick="startRazorpay()" style="width:100%;padding:14px;background:#ff5a1f;color:white;border:none;border-radius:12px;font-family:'Syne',sans-serif;font-weight:800;font-size:1rem;cursor:pointer;letter-spacing:0.02em" onmouseover="this.style.background='#e84d10'" onmouseout="this.style.background='#ff5a1f'">
+          Pay ₹299 with Razorpay →
+        </button>
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px">
+          <img src="https://razorpay.com/favicon.ico" style="width:14px;height:14px" onerror="this.style.display='none'" />
+          <span style="font-size:0.72rem;color:#bbb">Secured by Razorpay · UPI · Cards · Netbanking</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+let _proModalReason = '';
+function openProModal(reason) {
+  _proModalReason = reason;
+  const modal = document.getElementById('pro-modal');
+  if (!modal) { injectModals(); }
+  const titles = {
+    pdf:  'You\'ve Used All Free PDFs',
+    save: 'Save Limit Reached',
+    logo: 'Logo Upload is Pro',
+    bar:  'Upgrade to Pro'
+  };
+  const el = document.getElementById('pro-modal-title');
+  if (el) el.textContent = titles[reason] || 'Upgrade to Pro';
+  document.getElementById('pro-modal').style.display = 'flex';
+}
+function closeProModal() {
+  document.getElementById('pro-modal').style.display = 'none';
+}
+function switchTab(tab) {
+  document.getElementById('pane-unlock').style.display = tab === 'unlock' ? 'block' : 'none';
+  document.getElementById('pane-pay').style.display    = tab === 'pay'    ? 'block' : 'none';
+  document.getElementById('tab-unlock').style.borderColor = tab === 'unlock' ? '#ff5a1f' : '#ddd';
+  document.getElementById('tab-unlock').style.color        = tab === 'unlock' ? '#ff5a1f' : '#888';
+  document.getElementById('tab-unlock').style.background   = tab === 'unlock' ? 'rgba(255,90,31,0.06)' : 'transparent';
+  document.getElementById('tab-pay').style.borderColor = tab === 'pay' ? '#ff5a1f' : '#ddd';
+  document.getElementById('tab-pay').style.color        = tab === 'pay' ? '#ff5a1f' : '#888';
+  document.getElementById('tab-pay').style.background   = tab === 'pay' ? 'rgba(255,90,31,0.06)' : 'transparent';
+}
+
+function tryUnlock() {
+  const email = document.getElementById('unlock-email').value.trim();
+  const msg   = document.getElementById('unlock-msg');
+  if (!email || !email.includes('@')) {
+    msg.style.color = '#ff5a1f';
+    msg.textContent = '✗ Please enter a valid email.'; return;
+  }
+  if (checkAccess(email)) {
+    msg.style.color = '#00c9a7';
+    msg.textContent = '✓ Pro unlocked! Welcome back.';
+    setTimeout(closeProModal, 1200);
+  } else {
+    msg.style.color = '#ff5a1f';
+    msg.textContent = '✗ Email not found in Pro list. Have you paid? Or start a free trial.';
   }
 }
 
-// ─── TOAST ───
+function startTrial() {
+  const email = document.getElementById('unlock-email').value.trim();
+  const msg   = document.getElementById('unlock-msg');
+  if (!email || !email.includes('@')) {
+    msg.style.color = '#ff5a1f';
+    msg.textContent = '✗ Enter your email to start a trial.'; return;
+  }
+  const trials = JSON.parse(localStorage.getItem('ik_trials') || '{}');
+  if (trials[email.toLowerCase()]) {
+    const exp = new Date(trials[email.toLowerCase()]);
+    if (exp > new Date()) {
+      msg.style.color = '#e8b84b';
+      msg.textContent = `⏰ Trial already used. Expires ${exp.toLocaleDateString()}.`; return;
+    } else {
+      msg.style.color = '#ff5a1f';
+      msg.textContent = '✗ Your trial has expired. Please upgrade to Pro.'; return;
+    }
+  }
+  // Grant 3-day trial
+  const expiry = new Date(); expiry.setDate(expiry.getDate() + 3);
+  trials[email.toLowerCase()] = expiry.toISOString();
+  localStorage.setItem('ik_trials', JSON.stringify(trials));
+  activatePro(email.toLowerCase(), 'trial', expiry.toISOString());
+  msg.style.color = '#00c9a7';
+  msg.textContent = '🎁 3-day trial started!';
+  setTimeout(closeProModal, 1200);
+}
+
+// ── RAZORPAY INTEGRATION ──────────────────────────────────
+function startRazorpay() {
+  const email = document.getElementById('pay-email').value.trim();
+  if (!email || !email.includes('@')) {
+    toast('✗', 'Please enter your email first.'); return;
+  }
+
+  // Check if Razorpay SDK is loaded
+  if (typeof Razorpay === 'undefined') {
+    // Load SDK on demand
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => launchRazorpay(email);
+    s.onerror = () => toast('❌', 'Could not load Razorpay. Check your connection.');
+    document.head.appendChild(s);
+  } else {
+    launchRazorpay(email);
+  }
+}
+
+function launchRazorpay(email) {
+  // ⚠️  SETUP REQUIRED:
+  // 1. Create account at razorpay.com
+  // 2. Get your Key ID from Dashboard → Settings → API Keys
+  // 3. Replace 'YOUR_RAZORPAY_KEY_ID' below with your actual key
+  // 4. For production: create an order via your backend, pass order_id here
+  //    (Backend: POST https://api.razorpay.com/v1/orders → returns order_id)
+
+  const RAZORPAY_KEY = 'YOUR_RAZORPAY_KEY_ID'; // ← REPLACE THIS
+
+  if (RAZORPAY_KEY === 'YOUR_RAZORPAY_KEY_ID') {
+    // Demo mode — simulate successful payment
+    toast('🧪', 'Demo: Razorpay key not set. Simulating payment success...');
+    setTimeout(() => {
+      handlePaymentSuccess({ razorpay_payment_id: 'pay_demo_' + Date.now() }, email);
+    }, 1500);
+    return;
+  }
+
+  const options = {
+    key:          RAZORPAY_KEY,
+    amount:       29900,            // Amount in paise (₹299 = 29900 paise)
+    currency:     'INR',
+    name:         'InvoiceKaro',
+    description:  'Pro Plan — 1 Month',
+    image:        '',               // Your logo URL
+    // order_id:  'order_xxxxx',    // ← Generate from backend for production
+    prefill: {
+      email: email,
+      name:  '',
+      contact: ''
+    },
+    notes: { email: email, plan: 'pro_monthly' },
+    theme: { color: '#ff5a1f' },
+    handler: function(response) {
+      handlePaymentSuccess(response, email);
+    },
+    modal: {
+      ondismiss: function() { toast('ℹ', 'Payment cancelled.'); }
+    }
+  };
+
+  const rzp = new Razorpay(options);
+  rzp.on('payment.failed', function(resp) {
+    toast('❌', 'Payment failed: ' + resp.error.description);
+  });
+  rzp.open();
+}
+
+function handlePaymentSuccess(response, email) {
+  // Payment successful!
+  // ── WHAT HAPPENS HERE ──────────────────────────────────
+  // 1. Save payment record locally (for this session)
+  // 2. Activate Pro for this email
+  // 3. In production: send payment_id + email to your backend
+  //    to permanently record the paid user
+  //    e.g: POST /api/verify-payment { payment_id, email }
+  //    Backend adds email to PRO_EMAILS (or your database)
+  // ────────────────────────────────────────────────────────
+
+  const record = {
+    email,
+    payment_id: response.razorpay_payment_id,
+    paid_at:    new Date().toISOString(),
+    plan:       'pro_monthly'
+  };
+  // Store locally (useful for debugging, replace with backend call)
+  const payments = JSON.parse(localStorage.getItem('ik_payments') || '[]');
+  payments.push(record);
+  localStorage.setItem('ik_payments', JSON.stringify(payments));
+
+  // Activate Pro session
+  activatePro(email.toLowerCase(), 'pro');
+  closeProModal();
+  toast('🎉', `Pro activated! Welcome, ${email}`);
+
+  // ── SEND TO YOUR BACKEND (uncomment & update URL) ──────
+  // fetch('https://your-backend.vercel.app/api/payment-success', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json' },
+  //   body: JSON.stringify(record)
+  // });
+}
+
+// ── DEMO BAR ──────────────────────────────────────────────
+function injectDemoBar() {
+  if (isPro) return;
+  const bar = document.createElement('div');
+  bar.id = 'demo-bar';
+  bar.style.cssText = 'background:linear-gradient(90deg,#1a1a2e,#0d0d14);color:white;padding:9px 20px;text-align:center;font-size:0.82rem;display:flex;align-items:center;justify-content:center;gap:1rem;flex-wrap:wrap;position:relative;z-index:99';
+  document.body.insertBefore(bar, document.querySelector('header') || document.body.firstChild);
+  updateDemoBar();
+}
+
+function updateDemoBar() {
+  const bar = document.getElementById('demo-bar');
+  if (!bar || isPro) return;
+  const pLeft = Math.max(0, DEMO_PDF_LIMIT - demoStats.pdf);
+  const sLeft = Math.max(0, DEMO_SAVE_LIMIT - demoStats.save);
+  bar.innerHTML = `
+    <span style="color:#e8b84b;font-weight:700">⚡ Demo Mode</span>
+    <span style="color:#666">—</span>
+    <span style="color:#aaa">You're using InvoiceKaro Free</span>
+    <span style="background:rgba(255,90,31,0.2);color:#ff8c42;padding:2px 10px;border-radius:20px;font-size:0.78rem">${pLeft} PDF${pLeft!==1?'s':''} left</span>
+    <span style="background:rgba(255,90,31,0.2);color:#ff8c42;padding:2px 10px;border-radius:20px;font-size:0.78rem">${sLeft} save${sLeft!==1?'s':''} left</span>
+    <button onclick="openProModal('bar')" style="background:#ff5a1f;color:white;border:none;border-radius:20px;padding:5px 16px;font-size:0.78rem;font-weight:700;cursor:pointer">Upgrade Pro →</button>
+  `;
+}
+
+// ── TOAST ─────────────────────────────────────────────────
 function toast(icon, msg) {
   const t = document.getElementById('toast');
   document.getElementById('toast-msg').textContent = msg;
   t.querySelector('.t-icon').textContent = icon;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  setTimeout(() => t.classList.remove('show'), 3500);
 }
+
+// ── UPGRADE (legacy, now opens modal) ────────────────────
+function showUpgrade() { openProModal('bar'); }
 </script>
 </body>
 </html>
