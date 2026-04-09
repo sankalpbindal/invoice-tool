@@ -806,8 +806,16 @@ footer a { color: var(--accent); text-decoration: none; }
             </select>
           </div>
           <div class="form-group">
-            <label>Phone / Email</label>
-            <input id="biz-phone" type="text" placeholder="+91 98765 43210" oninput="updatePreview()" />
+            <label>Mobile Number</label>
+            <input id="biz-phone" type="tel" placeholder="98765 43210" maxlength="10" inputmode="numeric"
+              oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);validatePhone(this);updatePreview()" />
+            <div class="field-msg" style="font-size:0.72rem;margin-top:4px;min-height:16px"></div>
+          </div>
+          <div class="form-group">
+            <label>Email Address</label>
+            <input id="biz-email" type="email" placeholder="info@yourbusiness.com"
+              oninput="validateEmail(this);updatePreview()" />
+            <div class="field-msg" style="font-size:0.72rem;margin-top:4px;min-height:16px"></div>
           </div>
           <div class="form-group">
             <label>Bank / UPI (for reference)</label>
@@ -982,7 +990,7 @@ footer a { color: var(--accent); text-decoration: none; }
     <!-- ACTIONS -->
     <div class="actions">
       <button class="btn btn-outline" onclick="openPreview()">👁 Preview Invoice</button>
-      <button class="btn btn-primary" onclick="downloadPDF()">⬇ Download PDF <span style="font-size:0.7rem;opacity:0.8">(free)</span></button>
+      <button class="btn btn-primary" onclick="downloadPDF()">⬇ Download PDF</button>
       <button class="btn btn-paid" onclick="saveInvoice()">💾 Save Invoice</button>
       <button class="btn btn-outline" onclick="resetForm()">🔄 Reset</button>
     </div>
@@ -1236,7 +1244,7 @@ footer a { color: var(--accent); text-decoration: none; }
     <div class="modal-controls">
       <div class="modal-title">📄 Invoice Preview</div>
       <div style="display:flex;gap:0.75rem;align-items:center">
-        <button class="btn btn-primary" style="padding:8px 16px;font-size:0.85rem;min-width:auto" onclick="downloadPDF()">⬇ Download PDF</button>
+        <button class="btn btn-primary" style="padding:8px 16px;font-size:0.85rem;min-width:auto" onclick="downloadPreviewPDF()">⬇ Download PDF</button>
         <button class="modal-close" onclick="closePreview()">✕</button>
       </div>
     </div>
@@ -1502,9 +1510,9 @@ function amountToWords(n) {
 }
 
 // ── BUILD INVOICE HTML (self-contained, inline styles for PDF) ───
-function buildInvoiceHTML(forPDF = false) {
-  // ── SAMPLE DATA fallback (used when fields are empty) ──
-  const SAMPLE = {
+function buildInvoiceHTML(forPDF = false, useSample = false) {
+  // ── SAMPLE DATA ──────────────────────────────────────────
+  const S = {
     bizName:  'Sharma Enterprises',
     bizAddr:  '12, MG Road, Koramangala\nBengaluru, Karnataka – 560095',
     bizGST:   '29AABCS1429B1ZB',
@@ -1513,84 +1521,78 @@ function buildInvoiceHTML(forPDF = false) {
     custName: 'Gupta Tech Solutions Pvt. Ltd.',
     custAddr: '45, Connaught Place\nNew Delhi – 110001',
     custGST:  '07AADCG3541N1ZT',
-    invNum:   'INV-2025-001',
+    invNum:   'INV-SAMPLE-001',
     invDate:  new Date().toISOString().split('T')[0],
     dueDate:  (() => { const d = new Date(); d.setDate(d.getDate()+15); return d.toISOString().split('T')[0]; })(),
     pos:      'Delhi',
-    notes:    'Payment due within 15 days. Thank you for your business!\nBank: HDFC Bank | A/C: 1234567890 | IFSC: HDFC0001234'
+    notes:    'Payment due within 15 days. Thank you for your business!\nBank: HDFC Bank  |  A/C: 1234567890  |  IFSC: HDFC0001234'
   };
-
   const SAMPLE_ITEMS = [
     { desc: 'Website Design & Development', hsn: '998314', rate: 25000, qty: 1, gst: 18 },
-    { desc: 'Monthly SEO Services', hsn: '998361', rate: 8000, qty: 2, gst: 18 },
-    { desc: 'Logo & Brand Identity Design', hsn: '998383', rate: 5000, qty: 1, gst: 12 },
+    { desc: 'Monthly SEO Services',         hsn: '998361', rate:  8000, qty: 2, gst: 18 },
+    { desc: 'Logo & Brand Identity Design', hsn: '998383', rate:  5000, qty: 1, gst: 12 },
   ];
 
-  // Helper: return value if non-empty, else sample fallback
-  const val = (id, fallback) => {
+  // ── FIELD READER ────────────────────────────────────────
+  const v = (id, fallback) => {
+    if (useSample) return fallback;
     const el = document.getElementById(id);
     return (el && el.value && el.value.trim()) ? el.value.trim() : fallback;
   };
 
-  const bizName = val('biz-name', SAMPLE.bizName);
-  const bizAddr = val('biz-addr', SAMPLE.bizAddr);
-  const bizGST  = val('biz-gstin', SAMPLE.bizGST);
-  const bizState= val('biz-state', SAMPLE.bizState);
-  const bizPhone= val('biz-phone', SAMPLE.bizPhone);
-  const custName= val('cust-name', SAMPLE.custName);
-  const custAddr= val('cust-addr', SAMPLE.custAddr);
-  const custGST = val('cust-gstin', SAMPLE.custGST);
-  const invNum  = val('inv-num',  SAMPLE.invNum);
-  const invDate = val('inv-date', SAMPLE.invDate);
-  const dueDate = val('due-date', SAMPLE.dueDate);
-  const pos     = val('pos',      SAMPLE.pos);
-  const notes   = val('inv-notes', SAMPLE.notes);
-  const discount= parseFloat(document.getElementById('discount')?.value) || 0;
+  const bizName = v('biz-name', S.bizName);
+  const bizAddr = v('biz-addr', S.bizAddr);
+  const bizGST  = v('biz-gstin', S.bizGST);
+  const bizState= v('biz-state', S.bizState);
+  const bizPhone= v('biz-phone', S.bizPhone);
+  const custName= v('cust-name', S.custName);
+  const custAddr= v('cust-addr', S.custAddr);
+  const custGST = v('cust-gstin', S.custGST);
+  const invNum  = v('inv-num',   S.invNum);
+  const invDate = v('inv-date',  S.invDate);
+  const dueDate = v('due-date',  S.dueDate);
+  const pos     = v('pos',       S.pos);
+  const notes   = v('inv-notes', S.notes);
+  const discount= useSample ? 0 : (parseFloat(document.getElementById('discount')?.value) || 0);
 
-  // Use real items if any have a description+rate, else use sample items
-  const domRows = document.querySelectorAll('#items-container .item-row');
-  const hasRealItems = Array.from(domRows).some(r => {
-    const d = r.querySelector('.item-desc')?.value?.trim();
-    const p = parseFloat(r.querySelector('.item-rate')?.value);
-    return d && p > 0;
-  });
+  // ── ITEMS ────────────────────────────────────────────────
+  const domRows   = document.querySelectorAll('#items-container .item-row');
+  const hasReal   = !useSample && Array.from(domRows).some(r =>
+    r.querySelector('.item-desc')?.value?.trim() &&
+    parseFloat(r.querySelector('.item-rate')?.value) > 0
+  );
+  const itemSrc   = hasReal ? null : SAMPLE_ITEMS;
 
   let subtotal = 0, totalGST = 0, itemsHTML = '';
 
-  if (hasRealItems) {
+  const mkRow = (num, desc, hsn, qty, rate, gstPct, gstAmt, total, bg) => `<tr>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;color:#222;background:${bg}">${num}</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;color:#222;background:${bg}">${desc}</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:11px;color:#999;background:${bg}">${hsn}</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;color:#222;text-align:center;background:${bg}">${qty}</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;color:#222;text-align:right;font-family:monospace;background:${bg}">${fmt(rate)}</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;color:#222;text-align:center;background:${bg}">${gstPct}%</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;color:#222;text-align:right;font-family:monospace;background:${bg}">${fmt(gstAmt)}</td>
+    <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;font-weight:600;color:#111;text-align:right;font-family:monospace;background:${bg}">${fmt(total)}</td>
+  </tr>`;
+
+  if (hasReal) {
     domRows.forEach((row, i) => {
       const desc   = row.querySelector('.item-desc')?.value || '-';
       const hsn    = row.querySelector('.item-hsn')?.value  || '-';
       const rate   = parseFloat(row.querySelector('.item-rate')?.value) || 0;
       const qty    = parseFloat(row.querySelector('.item-qty')?.value)  || 1;
       const gstPct = parseFloat(row.querySelector('.item-gst')?.value)  || 0;
-      const base   = rate * qty;
-      const gstAmt = base * gstPct / 100;
+      const base   = rate * qty, gstAmt = base * gstPct / 100;
       subtotal += base; totalGST += gstAmt;
-      const bg = i % 2 === 1 ? '#fafaf8' : '#ffffff';
-      itemsHTML += buildItemRow(i+1, desc, hsn, qty, rate, gstPct, gstAmt, base+gstAmt, bg);
+      itemsHTML += mkRow(i+1, desc, hsn, qty, rate, gstPct, gstAmt, base+gstAmt, i%2?'#fafaf8':'#fff');
     });
   } else {
     SAMPLE_ITEMS.forEach((item, i) => {
-      const base   = item.rate * item.qty;
-      const gstAmt = base * item.gst / 100;
+      const base = item.rate * item.qty, gstAmt = base * item.gst / 100;
       subtotal += base; totalGST += gstAmt;
-      const bg = i % 2 === 1 ? '#fafaf8' : '#ffffff';
-      itemsHTML += buildItemRow(i+1, item.desc, item.hsn, item.qty, item.rate, item.gst, gstAmt, base+gstAmt, bg);
+      itemsHTML += mkRow(i+1, item.desc, item.hsn, item.qty, item.rate, item.gst, gstAmt, base+gstAmt, i%2?'#fafaf8':'#fff');
     });
-  }
-
-  function buildItemRow(num, desc, hsn, qty, rate, gstPct, gstAmt, total, bg) {
-    return `<tr>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${num}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg}">${desc}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:12px;background:${bg};color:#888">${hsn}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:center">${qty}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:right;font-family:monospace">${fmt(rate)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:center">${gstPct}%</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;background:${bg};text-align:right;font-family:monospace">${fmt(gstAmt)}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid #e8e8dc;font-size:13px;font-weight:600;background:${bg};text-align:right;font-family:monospace">${fmt(total)}</td>
-    </tr>`;
   }
 
   const cgst  = gstMode === 'intra' ? totalGST/2 : 0;
@@ -1600,122 +1602,192 @@ function buildInvoiceHTML(forPDF = false) {
 
   const logoHTML = (logoDataURL && isPro)
     ? `<img src="${logoDataURL}" style="max-width:100px;max-height:55px;object-fit:contain;display:block" />`
-    : `<div style="width:52px;height:52px;background:#0d0d14;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:white;font-family:sans-serif">${bizName.charAt(0).toUpperCase()}</div>`;
+    : `<div style="width:50px;height:50px;background:#0d0d14;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:800;color:#fff;font-family:Arial">${bizName.charAt(0).toUpperCase()}</div>`;
 
   const taxRowsHTML = gstMode === 'intra'
-    ? `<tr><td style="padding:6px 0;color:#888;font-size:12px">CGST (50%)</td><td style="text-align:right;font-family:monospace;font-size:12px">${fmt(cgst)}</td></tr>
-       <tr><td style="padding:6px 0;color:#888;font-size:12px">SGST (50%)</td><td style="text-align:right;font-family:monospace;font-size:12px">${fmt(sgst)}</td></tr>`
-    : `<tr><td style="padding:6px 0;color:#888;font-size:12px">IGST</td><td style="text-align:right;font-family:monospace;font-size:12px">${fmt(igst)}</td></tr>`;
+    ? `<tr><td style="padding:5px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">CGST</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #eee;color:#333">${fmt(cgst)}</td></tr>
+       <tr><td style="padding:5px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">SGST</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #eee;color:#333">${fmt(sgst)}</td></tr>`
+    : `<tr><td style="padding:5px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">IGST</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #eee;color:#333">${fmt(igst)}</td></tr>`;
 
-  const watermarkHTML = (!isPro && forPDF)
-    ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:72px;font-weight:900;color:rgba(255,90,31,0.06);white-space:nowrap;pointer-events:none;letter-spacing:8px;font-family:sans-serif;z-index:1">InvoiceKaro.in</div>`
+  const wmHTML = (!isPro && forPDF)
+    ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:60px;font-weight:900;color:rgba(255,90,31,0.07);white-space:nowrap;pointer-events:none;letter-spacing:6px;font-family:Arial;z-index:0">InvoiceKaro.in</div>`
     : '';
 
-  return `<div style="font-family:'DM Sans',Arial,sans-serif;background:#fff;padding:36px;max-width:800px;margin:0 auto;position:relative;color:#2a2a3e">
-  ${watermarkHTML}
+  const sampleBanner = useSample
+    ? `<div style="background:#fff8e1;border:1.5px dashed #e8b84b;border-radius:8px;padding:8px 16px;margin-bottom:16px;font-size:11px;color:#b8860b;text-align:center;font-weight:600">⚠ SAMPLE INVOICE — Fill in your details to generate a real invoice</div>`
+    : '';
+
+  // Full self-contained HTML with NO external dependencies
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; background:#fff; color:#222; }
+</style>
+</head><body>
+<div style="width:794px;margin:0 auto;padding:36px;background:#fff;position:relative;overflow:hidden">
+  ${wmHTML}
+  ${sampleBanner}
+
   <!-- HEADER -->
-  <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-    <tr>
-      <td style="vertical-align:top;width:60%">
-        ${logoHTML}
-        <div style="font-size:20px;font-weight:800;margin-top:10px;color:#0d0d14">${bizName}</div>
-        ${bizAddr ? `<div style="font-size:12px;color:#666;margin-top:4px;line-height:1.6">${bizAddr.replace(/\n/g,'<br>')}</div>` : ''}
-        ${bizPhone ? `<div style="font-size:12px;color:#666;margin-top:2px">📞 ${bizPhone}</div>` : ''}
-        ${bizGST ? `<div style="display:inline-block;margin-top:6px;background:#f5f4ef;border:1px solid #ddd;border-radius:5px;padding:3px 10px;font-size:11px;font-family:monospace;color:#0d0d14">GSTIN: ${bizGST}</div>` : ''}
-        ${bizState ? `<div style="font-size:11px;color:#999;margin-top:4px">State: ${bizState}</div>` : ''}
-      </td>
-      <td style="vertical-align:top;text-align:right">
-        <div style="font-size:28px;font-weight:900;color:#ff5a1f;letter-spacing:2px">TAX INVOICE</div>
-        <table style="margin-left:auto;margin-top:8px;font-size:12px;border-collapse:collapse">
-          <tr><td style="color:#888;padding:3px 8px 3px 0">Invoice No:</td><td style="font-weight:700;font-family:monospace">${invNum}</td></tr>
-          <tr><td style="color:#888;padding:3px 8px 3px 0">Date:</td><td style="font-weight:600">${invDate}</td></tr>
-          ${dueDate ? `<tr><td style="color:#888;padding:3px 8px 3px 0">Due:</td><td style="font-weight:600;color:#ff5a1f">${dueDate}</td></tr>` : ''}
-          ${pos ? `<tr><td style="color:#888;padding:3px 8px 3px 0">Place of Supply:</td><td style="font-weight:600">${pos}</td></tr>` : ''}
-        </table>
-        <div style="display:inline-block;margin-top:8px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;background:${gstMode==='intra'?'rgba(0,201,167,0.1)':'rgba(255,90,31,0.1)'};color:${gstMode==='intra'?'#00c9a7':'#ff5a1f'}">${gstMode==='intra'?'CGST + SGST (Intra-state)':'IGST (Inter-state)'}</div>
-      </td>
-    </tr>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr>
+    <td style="vertical-align:top;width:55%">
+      ${logoHTML}
+      <div style="font-size:20px;font-weight:800;margin-top:10px;color:#0d0d14;font-family:Arial">${bizName}</div>
+      ${bizAddr ? `<div style="font-size:12px;color:#555;margin-top:4px;line-height:1.6">${bizAddr.replace(/\n/g,'<br>')}</div>` : ''}
+      ${bizPhone ? `<div style="font-size:12px;color:#555;margin-top:3px">${bizPhone}</div>` : ''}
+      ${bizGST ? `<div style="display:inline-block;margin-top:6px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:3px 10px;font-size:11px;font-family:monospace;color:#333">GSTIN: ${bizGST}</div>` : ''}
+      ${bizState ? `<div style="font-size:11px;color:#999;margin-top:4px">State: ${bizState}</div>` : ''}
+    </td>
+    <td style="vertical-align:top;text-align:right">
+      <div style="font-size:26px;font-weight:900;color:#ff5a1f;letter-spacing:2px;font-family:Arial">TAX INVOICE</div>
+      <table style="margin-left:auto;margin-top:10px;font-size:12px;border-collapse:collapse">
+        <tr><td style="color:#888;padding:3px 10px 3px 0;text-align:right">Invoice No:</td><td style="font-weight:700;font-family:monospace;color:#111">${invNum}</td></tr>
+        <tr><td style="color:#888;padding:3px 10px 3px 0;text-align:right">Date:</td><td style="font-weight:600;color:#111">${invDate}</td></tr>
+        ${dueDate ? `<tr><td style="color:#888;padding:3px 10px 3px 0;text-align:right">Due Date:</td><td style="font-weight:600;color:#ff5a1f">${dueDate}</td></tr>` : ''}
+        ${pos ? `<tr><td style="color:#888;padding:3px 10px 3px 0;text-align:right">Place of Supply:</td><td style="font-weight:600;color:#111">${pos}</td></tr>` : ''}
+      </table>
+      <div style="display:inline-block;margin-top:10px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;background:${gstMode==='intra'?'#e8f8f5':'#fff0eb'};color:${gstMode==='intra'?'#00a884':'#ff5a1f'};border:1px solid ${gstMode==='intra'?'#b2dfdb':'#ffccbb'}">${gstMode==='intra'?'CGST + SGST (Intra-state)':'IGST (Inter-state)'}</div>
+    </td>
+  </tr>
   </table>
-  <!-- GRADIENT BAR -->
-  <div style="height:3px;background:linear-gradient(90deg,#ff5a1f,#e8b84b,#00c9a7);border-radius:2px;margin-bottom:20px"></div>
+
+  <!-- DIVIDER -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  <tr><td style="height:3px;background:linear-gradient(90deg,#ff5a1f,#e8b84b,#00c9a7)"></td></tr>
+  </table>
+
   <!-- PARTIES -->
   <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-    <tr>
-      <td style="width:50%;vertical-align:top;padding-right:20px">
-        <div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Bill From</div>
-        <div style="font-size:14px;font-weight:700;color:#0d0d14">${bizName}</div>
-        ${bizAddr ? `<div style="font-size:12px;color:#666;margin-top:3px;line-height:1.6">${bizAddr.replace(/\n/g,'<br>')}</div>` : ''}
-        ${bizGST ? `<div style="display:inline-block;margin-top:5px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace">GSTIN: ${bizGST}</div>` : ''}
-      </td>
-      <td style="width:50%;vertical-align:top;padding-left:20px;border-left:2px solid #f0f0ea">
-        <div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Bill To</div>
-        <div style="font-size:14px;font-weight:700;color:#0d0d14">${custName}</div>
-        ${custAddr ? `<div style="font-size:12px;color:#666;margin-top:3px;line-height:1.6">${custAddr.replace(/\n/g,'<br>')}</div>` : ''}
-        ${custGST ? `<div style="display:inline-block;margin-top:5px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace">GSTIN: ${custGST}</div>` : ''}
-      </td>
-    </tr>
+  <tr>
+    <td style="width:48%;vertical-align:top;padding-right:16px">
+      <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Bill From</div>
+      <div style="font-size:14px;font-weight:700;color:#0d0d14">${bizName}</div>
+      ${bizAddr ? `<div style="font-size:12px;color:#555;margin-top:4px;line-height:1.6">${bizAddr.replace(/\n/g,'<br>')}</div>` : ''}
+      ${bizGST ? `<div style="display:inline-block;margin-top:6px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace;color:#333">GSTIN: ${bizGST}</div>` : ''}
+    </td>
+    <td style="width:4%;border-left:2px solid #f0f0ea"></td>
+    <td style="width:48%;vertical-align:top;padding-left:16px">
+      <div style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Bill To</div>
+      <div style="font-size:14px;font-weight:700;color:#0d0d14">${custName}</div>
+      ${custAddr ? `<div style="font-size:12px;color:#555;margin-top:4px;line-height:1.6">${custAddr.replace(/\n/g,'<br>')}</div>` : ''}
+      ${custGST ? `<div style="display:inline-block;margin-top:6px;background:#f5f4ef;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:11px;font-family:monospace;color:#333">GSTIN: ${custGST}</div>` : ''}
+    </td>
+  </tr>
   </table>
+
   <!-- ITEMS TABLE -->
-  <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-    <thead>
-      <tr style="background:#0d0d14">
-        <th style="padding:10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">#</th>
-        <th style="padding:10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Description</th>
-        <th style="padding:10px;text-align:left;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">HSN/SAC</th>
-        <th style="padding:10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Qty</th>
-        <th style="padding:10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Rate</th>
-        <th style="padding:10px;text-align:center;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">GST%</th>
-        <th style="padding:10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Tax Amt</th>
-        <th style="padding:10px;text-align:right;font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</th>
-      </tr>
-    </thead>
-    <tbody>${itemsHTML}</tbody>
-  </table>
-  <!-- TOTALS -->
-  <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-    <tr>
-      <td style="width:55%;vertical-align:top">
-        ${notes ? `<div style="background:#f9f8f3;border-radius:8px;padding:12px;font-size:12px;color:#888"><strong style="color:#333">Notes / Terms:</strong><br>${notes}</div>` : ''}
-      </td>
-      <td style="width:45%;vertical-align:top">
-        <table style="width:100%;border-collapse:collapse">
-          <tr><td style="padding:6px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">Subtotal</td><td style="text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #eee">${fmt(subtotal)}</td></tr>
-          ${taxRowsHTML}
-          ${discount > 0 ? `<tr><td style="padding:6px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">Discount</td><td style="text-align:right;font-family:monospace;font-size:12px;color:#ff5a1f;border-bottom:1px solid #eee">- ${fmt(discount)}</td></tr>` : ''}
-          <tr>
-            <td style="padding:12px 0 8px;font-weight:800;font-size:15px;color:#0d0d14;border-top:2px solid #0d0d14">Total Amount</td>
-            <td style="text-align:right;font-family:monospace;font-size:18px;font-weight:700;color:#ff5a1f;padding-top:12px;border-top:2px solid #0d0d14">${fmt(grand)}</td>
-          </tr>
-          <tr><td colspan="2" style="text-align:right;font-size:11px;color:#999;font-style:italic;padding-top:4px">${grand > 0 ? 'Rupees ' + amountToWords(Math.round(grand)) + ' Only' : ''}</td></tr>
-        </table>
-      </td>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+  <thead>
+    <tr style="background:#0d0d14">
+      <th style="padding:10px 10px;text-align:left;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">#</th>
+      <th style="padding:10px 10px;text-align:left;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Description</th>
+      <th style="padding:10px 10px;text-align:left;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">HSN/SAC</th>
+      <th style="padding:10px 10px;text-align:center;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Qty</th>
+      <th style="padding:10px 10px;text-align:right;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Rate</th>
+      <th style="padding:10px 10px;text-align:center;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">GST%</th>
+      <th style="padding:10px 10px;text-align:right;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Tax</th>
+      <th style="padding:10px 10px;text-align:right;font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</th>
     </tr>
+  </thead>
+  <tbody>${itemsHTML}</tbody>
   </table>
+
+  <!-- TOTALS + NOTES -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+  <tr>
+    <td style="width:52%;vertical-align:top;padding-right:16px">
+      ${notes ? `<div style="background:#f9f8f3;border-radius:8px;padding:12px;font-size:11px;color:#666;line-height:1.7"><strong style="color:#333;font-size:12px">Notes / Terms:</strong><br>${notes.replace(/\n/g,'<br>')}</div>` : ''}
+    </td>
+    <td style="width:48%;vertical-align:top">
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="padding:6px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">Subtotal (excl. GST)</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #eee;color:#333">${fmt(subtotal)}</td></tr>
+        ${taxRowsHTML}
+        ${discount > 0 ? `<tr><td style="padding:6px 0;color:#888;font-size:12px;border-bottom:1px solid #eee">Discount</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-size:12px;color:#ff5a1f;border-bottom:1px solid #eee">- ${fmt(discount)}</td></tr>` : ''}
+        <tr>
+          <td style="padding:12px 0 6px;font-weight:800;font-size:14px;color:#0d0d14;border-top:2px solid #0d0d14">Total Amount</td>
+          <td style="padding:12px 0 6px;text-align:right;font-family:monospace;font-size:17px;font-weight:700;color:#ff5a1f;border-top:2px solid #0d0d14">${fmt(grand)}</td>
+        </tr>
+        <tr><td colspan="2" style="text-align:right;font-size:10px;color:#aaa;font-style:italic;padding-top:4px">${grand > 0 ? 'Rupees ' + amountToWords(Math.round(grand)) + ' Only' : ''}</td></tr>
+      </table>
+    </td>
+  </tr>
+  </table>
+
   <!-- FOOTER -->
-  <div style="border-top:1px solid #eee;padding-top:14px;display:flex;justify-content:space-between;align-items:flex-end">
-    <div>
-      <div style="font-size:10px;color:#bbb">Generated by InvoiceKaro.in</div>
-      <div style="font-size:10px;color:#bbb">This is a computer-generated invoice.</div>
-    </div>
-    <div style="text-align:right">
+  <table style="width:100%;border-collapse:collapse;border-top:1px solid #eee;margin-top:16px">
+  <tr>
+    <td style="padding-top:12px;font-size:10px;color:#bbb;vertical-align:bottom">
+      Generated by InvoiceKaro.in &nbsp;·&nbsp; Computer-generated invoice
+    </td>
+    <td style="padding-top:12px;text-align:right;vertical-align:bottom">
       <div style="width:140px;border-top:1.5px solid #333;margin-bottom:4px;margin-left:auto"></div>
-      <div style="font-size:11px;color:#999">Authorised Signatory</div>
-      <div style="font-size:13px;font-weight:700;color:#0d0d14">${bizName}</div>
-    </div>
-  </div>
-</div>`;
+      <div style="font-size:10px;color:#999">Authorised Signatory</div>
+      <div style="font-size:12px;font-weight:700;color:#0d0d14">${bizName}</div>
+    </td>
+  </tr>
+  </table>
+</div>
+</body></html>`;
 }
 
-// ── PREVIEW ──────────────────────────────────────────────
+// ── VALIDATION HELPERS ────────────────────────────────────
+function validatePhone(inp) {
+  const raw = inp.value.replace(/\D/g, '');       // strip non-digits
+  inp.value = raw.slice(0, 10);                    // max 10 digits
+  const msg = inp.nextElementSibling;
+  if (!msg || !msg.classList.contains('field-msg')) return;
+  if (!inp.value) { msg.textContent = ''; return; }
+  if (!/^[6-9]/.test(inp.value)) {
+    msg.style.color = '#ff5a1f';
+    msg.textContent = '✗ Must start with 6, 7, 8, or 9'; return;
+  }
+  if (inp.value.length < 10) {
+    msg.style.color = '#ff5a1f';
+    msg.textContent = `✗ ${10 - inp.value.length} more digit(s) needed`; return;
+  }
+  msg.style.color = '#00c9a7';
+  msg.textContent = '✓ Valid mobile number';
+}
+
+function validateEmail(inp) {
+  const msg = inp.nextElementSibling;
+  if (!msg || !msg.classList.contains('field-msg')) return;
+  if (!inp.value) { msg.textContent = ''; return; }
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(inp.value);
+  msg.style.color = ok ? '#00c9a7' : '#ff5a1f';
+  msg.textContent = ok ? '✓ Valid email' : '✗ Enter a valid email (e.g. name@domain.com)';
+}
+
+// ── FORM VALIDATION before real PDF download ─────────────
+function validateFormForPDF() {
+  const errors = [];
+  if (!document.getElementById('biz-name').value.trim())  errors.push('Business Name');
+  if (!document.getElementById('biz-gstin').value.trim()) errors.push('Your GSTIN');
+  if (!document.getElementById('cust-name').value.trim()) errors.push('Customer Name');
+  const hasItems = Array.from(document.querySelectorAll('#items-container .item-row')).some(r =>
+    r.querySelector('.item-desc')?.value?.trim() && parseFloat(r.querySelector('.item-rate')?.value) > 0
+  );
+  if (!hasItems) errors.push('At least 1 item with description & rate');
+  return errors;
+}
+
+// ── PREVIEW (uses sample data if form empty) ──────────────
 function openPreview() {
   const modal = document.getElementById('preview-modal');
-  const box = modal.querySelector('.modal-box');
-  const old = document.getElementById('invoice-preview');
+  const box   = modal.querySelector('.modal-box');
+  const old   = document.getElementById('invoice-preview');
   if (old) old.remove();
-  const wrap = document.createElement('div');
-  wrap.id = 'invoice-preview';
+  const wrap  = document.createElement('div');
+  wrap.id     = 'invoice-preview';
   wrap.style.cssText = 'padding:16px';
-  wrap.innerHTML = buildInvoiceHTML(false);
+  const hasReal = Array.from(document.querySelectorAll('#items-container .item-row')).some(r =>
+    r.querySelector('.item-desc')?.value?.trim() &&
+    parseFloat(r.querySelector('.item-rate')?.value) > 0
+  );
+  // useSample=true only if nothing entered at all
+  const useSample = !hasReal && !document.getElementById('biz-name').value.trim();
+  wrap.innerHTML = buildInvoiceHTML(false, useSample).replace(/<!DOCTYPE html>.*?<body>/s, '').replace('</body></html>','');
   box.appendChild(wrap);
   modal.classList.add('open');
 }
@@ -1728,74 +1800,94 @@ document.addEventListener('click', e => {
   if (e.target.id === 'pro-modal')     closeProModal();
 });
 
-// ── PDF DOWNLOAD ─────────────────────────────────────────
+// ── PDF DOWNLOAD (REAL) ───────────────────────────────────
 function downloadPDF() {
+  // 1. Validate form — require real data
+  const errors = validateFormForPDF();
+  if (errors.length) {
+    toast('⚠️', `Please fill in: ${errors.join(', ')}`);
+    return;
+  }
+
+  // 2. Demo limit check
   if (!isPro) {
-    if (demoStats.pdf >= DEMO_PDF_LIMIT) {
-      openProModal('pdf');
-      return;
-    }
+    if (demoStats.pdf >= DEMO_PDF_LIMIT) { openProModal('pdf'); return; }
     demoStats.pdf++;
     localStorage.setItem('ik_demo', JSON.stringify(demoStats));
     updateDemoBar();
   }
 
-  const invNum = document.getElementById('inv-num').value || 'invoice';
-  toast('⏳', 'Generating PDF...');
+  _doPDFDownload(false, false);
+}
 
-  // CRITICAL: element must be visible in the DOM for html2canvas to render it.
-  // We place it on-screen but behind everything, then remove after capture.
-  const container = document.createElement('div');
-  container.style.cssText = [
-    'position:fixed',
-    'top:0',
-    'left:0',
-    'width:794px',
-    'background:#ffffff',
-    'z-index:-9999',
-    'pointer-events:none'
-  ].join(';');
-  container.innerHTML = buildInvoiceHTML(true);
-  document.body.appendChild(container);
+// ── PDF DOWNLOAD from Preview (sample, doesn't count) ─────
+function downloadPreviewPDF() {
+  const hasReal = Array.from(document.querySelectorAll('#items-container .item-row')).some(r =>
+    r.querySelector('.item-desc')?.value?.trim() &&
+    parseFloat(r.querySelector('.item-rate')?.value) > 0
+  );
+  const useSample = !hasReal && !document.getElementById('biz-name').value.trim();
+  _doPDFDownload(useSample, true); // isPreview=true → never count against limit
+}
 
-  // Wait for browser to paint before capturing
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
+// ── CORE PDF ENGINE ───────────────────────────────────────
+function _doPDFDownload(useSample, isPreview) {
+  const invNum = useSample ? 'SAMPLE-INVOICE'
+    : (document.getElementById('inv-num').value || 'invoice');
+  toast('⏳', 'Generating PDF…');
+
+  const fullHTML = buildInvoiceHTML(true, useSample);
+
+  // Use a hidden iframe — the ONLY reliable cross-browser method
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:0;left:0;width:794px;height:1123px;border:none;opacity:0;pointer-events:none;z-index:-1';
+  document.body.appendChild(iframe);
+
+  // Write full HTML into iframe (self-contained, no external deps)
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(fullHTML);
+  iframe.contentDocument.close();
+
+  // Wait for iframe to fully render
+  iframe.onload = () => {
+    setTimeout(() => {
+      const el = iframe.contentDocument.body;
+
       const opt = {
-        margin:      10,
+        margin:      8,
         filename:    `${invNum}.pdf`,
-        image:       { type: 'jpeg', quality: 0.97 },
+        image:       { type: 'jpeg', quality: 0.98 },
         html2canvas: {
           scale:           2,
           useCORS:         true,
           backgroundColor: '#ffffff',
           logging:         false,
-          windowWidth:     794,
-          scrollX:         0,
-          scrollY:         0
+          windowWidth:     794
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      html2pdf().set(opt).from(container).save()
+      html2pdf().set(opt).from(el).save()
         .then(() => {
-          document.body.removeChild(container);
-          if (!isPro) {
+          document.body.removeChild(iframe);
+          if (isPreview) {
+            toast('✅', useSample ? 'Sample PDF downloaded!' : 'Invoice PDF downloaded!');
+          } else if (!isPro) {
             const left = Math.max(0, DEMO_PDF_LIMIT - demoStats.pdf);
             toast('📄', left > 0
-              ? `PDF downloaded with watermark. ${left} free download${left !== 1 ? 's' : ''} left.`
-              : 'Last free PDF used! Upgrade Pro for unlimited clean PDFs.');
+              ? `PDF downloaded with watermark. ${left} free download${left!==1?'s':''} left.`
+              : 'Last free PDF used! Upgrade Pro for unlimited.');
           } else {
             toast('✅', 'Invoice downloaded successfully!');
           }
         })
         .catch(err => {
-          if (document.body.contains(container)) document.body.removeChild(container);
-          console.error('PDF error:', err);
+          if (document.body.contains(iframe)) document.body.removeChild(iframe);
+          console.error(err);
           toast('❌', 'PDF failed. Please try again.');
         });
-    });
-  });
+    }, 500);
+  };
 }
 
 // ── SAVE INVOICE ─────────────────────────────────────────
@@ -1882,7 +1974,7 @@ function handleLogo(e) {
 // ── RESET ─────────────────────────────────────────────────
 function resetForm() {
   if (!confirm('Reset all invoice data?')) return;
-  ['biz-name','biz-addr','biz-gstin','biz-phone','biz-bank',
+  ['biz-name','biz-addr','biz-gstin','biz-phone','biz-email','biz-bank',
    'cust-name','cust-addr','cust-gstin','inv-notes'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
