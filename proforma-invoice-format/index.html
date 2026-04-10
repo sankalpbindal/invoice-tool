@@ -723,6 +723,8 @@ footer a { color: var(--accent); text-decoration: none; }
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>emailjs.init('YOUR_PUBLIC_KEY');</script> <!-- ← replace -->
 </head>
 <body>
 
@@ -2221,21 +2223,79 @@ function handlePaymentSuccess(response, email) {
   //    Backend adds email to PRO_EMAILS (or your database)
   // ────────────────────────────────────────────────────────
 
+  function handlePaymentSuccess(response, email) {
   const record = {
     email,
     payment_id: response.razorpay_payment_id,
-    paid_at:    new Date().toISOString(),
+    paid_at:    new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
     plan:       'pro_monthly'
   };
-  // Store locally (useful for debugging, replace with backend call)
+
+  // Save locally
   const payments = JSON.parse(localStorage.getItem('ik_payments') || '[]');
   payments.push(record);
   localStorage.setItem('ik_payments', JSON.stringify(payments));
 
-  // Activate Pro session
+  // ── Send email to YOU via EmailJS ──
+  emailjs.send('YOUR_SERVICE_ID', 'YOUR_TEMPLATE_ID', {
+    user_email:  record.email,
+    payment_id:  record.payment_id,
+    paid_at:     record.paid_at,
+    plan:        record.plan,
+    to_email:    'invoicekaro@zohomail.in'
+  })
+  .then(() => console.log('Payment email sent!'))
+  .catch(err => console.error('EmailJS error:', err));
+
+  // ── Show confirmation to the user ──
   activatePro(email.toLowerCase(), 'pro');
   closeProModal();
-  toast('🎉', `Pro activated! Welcome, ${email}`);
+
+  // Show a styled confirmation message
+  showPaymentConfirmation(record);
+}
+
+function showPaymentConfirmation(record) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position:fixed; inset:0; background:rgba(13,13,20,0.85);
+    display:flex; align-items:center; justify-content:center;
+    z-index:9999; padding:1rem;
+  `;
+  overlay.innerHTML = `
+    <div style="background:#fff; border-radius:16px; padding:2.5rem;
+                max-width:420px; width:100%; text-align:center;
+                box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="font-size:3rem; margin-bottom:1rem;">🎉</div>
+      <h2 style="font-family:'Syne',sans-serif; font-size:1.5rem;
+                 color:#0d0d14; margin-bottom:0.5rem;">Payment Successful!</h2>
+      <p style="color:#7a7a96; margin-bottom:1.5rem; font-size:0.9rem;">
+        Welcome to InvoiceKaro Pro! Your account is now active.
+      </p>
+      <div style="background:#f5f4ef; border-radius:10px; padding:1rem;
+                  text-align:left; margin-bottom:1.5rem; font-size:0.85rem; color:#2a2a3e;">
+        <div style="margin-bottom:0.4rem;">📧 <strong>Email:</strong> ${record.email}</div>
+        <div style="margin-bottom:0.4rem;">🧾 <strong>Payment ID:</strong> ${record.payment_id}</div>
+        <div style="margin-bottom:0.4rem;">📅 <strong>Date:</strong> ${record.paid_at}</div>
+        <div>📦 <strong>Plan:</strong> Pro Monthly</div>
+      </div>
+      <p style="color:#7a7a96; font-size:0.8rem; margin-bottom:1.5rem;">
+        A confirmation has been sent to our team. You'll receive a welcome email shortly.
+      </p>
+      <button onclick="this.closest('div[style*=fixed]') ? document.body.removeChild(this.closest('[style*=position:fixed]')) : null"
+        style="background:#ff5a1f; color:white; border:none; border-radius:10px;
+               padding:12px 32px; font-weight:700; font-size:1rem; cursor:pointer;
+               width:100%;">
+        Start Using Pro →
+      </button>
+    </div>
+  `;
+  // Close on backdrop click
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) document.body.removeChild(overlay);
+  });
+  document.body.appendChild(overlay);
+}
 
   // ── SEND TO YOUR BACKEND (uncomment & update URL) ──────
   // fetch('https://your-backend.vercel.app/api/payment-success', {
