@@ -21,7 +21,6 @@
 <link rel="canonical" href="https://invoicekaro.in/" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 :root {
   --ink: #0d0d14;
@@ -990,7 +989,7 @@ footer a { color: var(--accent); text-decoration: none; }
     <!-- ACTIONS -->
     <div class="actions">
       <button class="btn btn-outline" onclick="openPreview()">👁 Preview Invoice</button>
-      <button class="btn btn-primary" onclick="downloadPDF()">⬇ Download PDF</button>
+      <button class="btn btn-primary" onclick="downloadPDF()">🖨️ Download / Print PDF</button>
       <button class="btn btn-paid" onclick="saveInvoice()">💾 Save Invoice</button>
       <button class="btn btn-outline" onclick="resetForm()">🔄 Reset</button>
     </div>
@@ -1244,7 +1243,7 @@ footer a { color: var(--accent); text-decoration: none; }
     <div class="modal-controls">
       <div class="modal-title">📄 Invoice Preview</div>
       <div style="display:flex;gap:0.75rem;align-items:center">
-        <button class="btn btn-primary" style="padding:8px 16px;font-size:0.85rem;min-width:auto" onclick="downloadPreviewPDF()">⬇ Download PDF</button>
+        <button class="btn btn-primary" style="padding:8px 16px;font-size:0.85rem;min-width:auto" onclick="downloadPreviewPDF()">🖨️ Download / Print PDF</button>
         <button class="modal-close" onclick="closePreview()">✕</button>
       </div>
     </div>
@@ -1622,6 +1621,10 @@ function buildInvoiceHTML(forPDF = false, useSample = false) {
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Arial, Helvetica, sans-serif; background:#fff; color:#222; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { margin: 10mm; size: A4; }
+  }
 </style>
 </head><body>
 <div style="width:794px;margin:0 auto;padding:36px;background:#fff;position:relative;overflow:hidden">
@@ -1802,92 +1805,59 @@ document.addEventListener('click', e => {
 
 // ── PDF DOWNLOAD (REAL) ───────────────────────────────────
 function downloadPDF() {
-  // 1. Validate form — require real data
+  // Validate real data is present
   const errors = validateFormForPDF();
   if (errors.length) {
-    toast('⚠️', `Please fill in: ${errors.join(', ')}`);
+    toast('⚠️', 'Please fill in: ' + errors.join(', '));
     return;
   }
-
-  // 2. Demo limit check
+  // Demo limit check
   if (!isPro) {
     if (demoStats.pdf >= DEMO_PDF_LIMIT) { openProModal('pdf'); return; }
     demoStats.pdf++;
     localStorage.setItem('ik_demo', JSON.stringify(demoStats));
     updateDemoBar();
   }
-
-  _doPDFDownload(false, false);
+  _printPDF(false);
 }
 
-// ── PDF DOWNLOAD from Preview (sample, doesn't count) ─────
 function downloadPreviewPDF() {
+  // Preview PDF — uses sample if empty, never counts against limit
   const hasReal = Array.from(document.querySelectorAll('#items-container .item-row')).some(r =>
     r.querySelector('.item-desc')?.value?.trim() &&
     parseFloat(r.querySelector('.item-rate')?.value) > 0
   );
   const useSample = !hasReal && !document.getElementById('biz-name').value.trim();
-  _doPDFDownload(useSample, true); // isPreview=true → never count against limit
+  _printPDF(useSample);
 }
 
-// ── CORE PDF ENGINE ───────────────────────────────────────
-function _doPDFDownload(useSample, isPreview) {
-  const invNum = useSample ? 'SAMPLE-INVOICE'
-    : (document.getElementById('inv-num').value || 'invoice');
-  toast('⏳', 'Generating PDF…');
-
+function _printPDF(useSample) {
   const fullHTML = buildInvoiceHTML(true, useSample);
-
-  // Use a hidden iframe — the ONLY reliable cross-browser method
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;top:0;left:0;width:794px;height:1123px;border:none;opacity:0;pointer-events:none;z-index:-1';
-  document.body.appendChild(iframe);
-
-  // Write full HTML into iframe (self-contained, no external deps)
-  iframe.contentDocument.open();
-  iframe.contentDocument.write(fullHTML);
-  iframe.contentDocument.close();
-
-  // Wait for iframe to fully render
-  iframe.onload = () => {
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) {
+    toast('❌', 'Popup blocked — please allow popups and try again.');
+    return;
+  }
+  w.document.open();
+  w.document.write(fullHTML);
+  w.document.close();
+  // Wait for fonts/images then trigger print dialog (Save as PDF)
+  w.onload = () => {
     setTimeout(() => {
-      const el = iframe.contentDocument.body;
-
-      const opt = {
-        margin:      8,
-        filename:    `${invNum}.pdf`,
-        image:       { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale:           2,
-          useCORS:         true,
-          backgroundColor: '#ffffff',
-          logging:         false,
-          windowWidth:     794
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-
-      html2pdf().set(opt).from(el).save()
-        .then(() => {
-          document.body.removeChild(iframe);
-          if (isPreview) {
-            toast('✅', useSample ? 'Sample PDF downloaded!' : 'Invoice PDF downloaded!');
-          } else if (!isPro) {
-            const left = Math.max(0, DEMO_PDF_LIMIT - demoStats.pdf);
-            toast('📄', left > 0
-              ? `PDF downloaded with watermark. ${left} free download${left!==1?'s':''} left.`
-              : 'Last free PDF used! Upgrade Pro for unlimited.');
-          } else {
-            toast('✅', 'Invoice downloaded successfully!');
-          }
-        })
-        .catch(err => {
-          if (document.body.contains(iframe)) document.body.removeChild(iframe);
-          console.error(err);
-          toast('❌', 'PDF failed. Please try again.');
-        });
-    }, 500);
+      w.focus();
+      w.print();
+      // Close after print dialog is handled
+      setTimeout(() => w.close(), 1000);
+    }, 400);
   };
+  // Fallback if onload already fired
+  setTimeout(() => {
+    if (!w.closed) {
+      w.focus();
+      w.print();
+    }
+  }, 800);
+  toast('🖨️', 'Print dialog opened — choose "Save as PDF"');
 }
 
 // ── SAVE INVOICE ─────────────────────────────────────────
